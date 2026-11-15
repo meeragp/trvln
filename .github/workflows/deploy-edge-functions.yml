@@ -38,7 +38,7 @@ jobs:
             exit 0
           fi
           supabase link --project-ref "$PROJECT_REF"
-          supabase db push --remote
+          supabase db push --remote --yes
 
       - name: Deploy generate-itinerary
         run: |
