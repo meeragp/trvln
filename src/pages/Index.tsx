@@ -384,15 +384,22 @@ const Index = () => {
 
   const getHeaders = useCallback(() => functionHeaders(), []);
 
-  const analyzeInspiration = useCallback(async (mediaUrls: string[]): Promise<IdentifiedDestination[]> => {
-    if (mediaUrls.length === 0) return [];
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-inspiration`, {
-      // The edge function accepts at most 20 images per call
-      method: "POST", headers: await getHeaders(), body: JSON.stringify({ mediaUrls: mediaUrls.slice(0, 20) }),
-    });
-    if (!response.ok) return [];
-    const data = await response.json();
-    return data.destinations || [];
+  // `error` is set when detection itself failed (as opposed to finding no
+  // locations), so callers don't blame the user's photos for it
+  const analyzeInspiration = useCallback(async (mediaUrls: string[]): Promise<{ destinations: IdentifiedDestination[]; error?: string }> => {
+    if (mediaUrls.length === 0) return { destinations: [] };
+    const fallbackError = "Location detection is unavailable right now. Add your destinations manually.";
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-inspiration`, {
+        // The edge function accepts at most 20 images per call
+        method: "POST", headers: await getHeaders(), body: JSON.stringify({ mediaUrls: mediaUrls.slice(0, 20) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return { destinations: [], error: typeof data.error === "string" ? data.error : fallbackError };
+      return { destinations: data.destinations || [] };
+    } catch {
+      return { destinations: [], error: fallbackError };
+    }
   }, [getHeaders]);
 
   const suggestThemes = useCallback(async (prefs: TripPreferences) => {
@@ -1045,7 +1052,8 @@ const Index = () => {
           : []
         ));
         if (allImageUrls.length > 0) {
-          const identified = await analyzeInspiration(allImageUrls);
+          const { destinations: identified, error: detectError } = await analyzeInspiration(allImageUrls);
+          if (detectError) toast({ title: "Couldn't identify locations from your media", description: detectError });
           const newLocations = identified
             .filter(d => d.confidence === 'high' || d.confidence === 'medium')
             .map(d => d.location)
@@ -1364,7 +1372,11 @@ const Index = () => {
             onFramesReady={async (frameUrls) => {
               setIsIdentifyingLocations(true);
               try {
-                const identified = await analyzeInspiration(frameUrls);
+                const { destinations: identified, error: detectError } = await analyzeInspiration(frameUrls);
+                if (detectError) {
+                  toast({ title: "Couldn't identify locations", description: detectError });
+                  return;
+                }
                 const newLocations = identified
                   .filter(d => d.confidence === 'high' || d.confidence === 'medium')
                   .map(d => d.location)

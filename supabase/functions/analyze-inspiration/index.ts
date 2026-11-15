@@ -1,9 +1,21 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { callGeminiWithFallback, type GeminiFailureKind } from "../_shared/gemini.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const MODELS = ["models/gemini-2.5-pro", "models/gemini-2.5-flash"];
+
+// What the app shows when every model failed. Users can always add
+// destinations by hand, so say so instead of blaming their photos.
+const USER_ERRORS: Record<GeminiFailureKind, { status: number; error: string }> = {
+  rate_limit: { status: 429, error: "Location detection is busy right now. Try again in a minute, or add your destinations manually." },
+  quota: { status: 503, error: "Location detection is unavailable right now. Add your destinations manually." },
+  unavailable: { status: 503, error: "Location detection is temporarily down. Try again shortly, or add your destinations manually." },
+  other: { status: 500, error: "Couldn't analyze these images. Add your destinations manually." },
 };
 
 const RequestSchema = z.object({
@@ -86,49 +98,47 @@ If no locations can be identified from any images, return:
       });
     }
 
-    console.log("Calling Google AI for vision analysis");
-
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${GOOGLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "models/gemini-2.5-pro",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content },
-        ],
-        response_format: { type: "json_object" },
-      }),
+    // Pro reads landmarks and signage best; Flash has separate quota and
+    // capacity, so it keeps location detection working when Pro is out of
+    // quota, rate limited or overloaded.
+    const result = await callGeminiWithFallback(MODELS, (model) => {
+      console.log(`Calling ${model} for vision analysis`);
+      return fetch("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${GOOGLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content },
+          ],
+          response_format: { type: "json_object" },
+        }),
+      });
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Google AI error:", response.status, errorText);
-
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Please try again in a moment." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    for (const f of result.failures) {
+      console.error(`Google AI error from ${f.model}: HTTP ${f.status} (${f.kind}): ${f.message}`);
+      if (f.kind === "quota") {
+        console.error(`${f.model} is out of quota on GOOGLE_API_KEY's Google Cloud project; check its billing and quota in Google AI Studio`);
       }
-
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Usage limit reached. Please add credits to continue." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({ error: "Failed to analyze images. Please try again." }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    const data = await response.json();
+    if (!result.ok) {
+      // The last model tried decides what the user is told
+      const { kind } = result.failures[result.failures.length - 1];
+      const { status, error } = USER_ERRORS[kind];
+      return new Response(
+        JSON.stringify({ error, code: kind }),
+        { status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    if (result.failures.length > 0) console.warn(`Fell back to ${result.model}`);
+
+    const data = result.data;
     const responseContent = data.choices?.[0]?.message?.content || "{}";
     
     console.log("Raw AI response:", responseContent);
@@ -145,7 +155,7 @@ If no locations can be identified from any images, return:
     console.log(`Identified ${destinations.length} destination(s):`, destinations);
 
     return new Response(
-      JSON.stringify({ destinations }),
+      JSON.stringify({ destinations, model: result.model }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {
