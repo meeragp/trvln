@@ -3,6 +3,7 @@ import { Upload, X, Image as ImageIcon, Video, Loader2, Link } from "lucide-reac
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { interleave } from "@/lib/interleave";
 
 export interface MediaItem {
   type: 'image' | 'video';
@@ -237,10 +238,7 @@ export const MediaDropZone = forwardRef<MediaDropZoneHandle, MediaDropZoneProps 
     // Interleave them (1st frame of each video, then 2nd, ...) so the
     // analyzer's 20-image cap keeps frames from every video instead of
     // spending it all on the first one or two.
-    const longest = Math.max(0, ...framesPerVideo.map(f => f.length));
-    const allFrameUrls = Array.from({ length: longest }, (_, i) =>
-      framesPerVideo.map(f => f[i]).filter((u): u is string => !!u)
-    ).flat();
+    const allFrameUrls = interleave(framesPerVideo);
     if (allFrameUrls.length > 0) onFramesReady?.(allFrameUrls);
 
     const succeeded = results.filter(r => r.status === 'fulfilled').length;

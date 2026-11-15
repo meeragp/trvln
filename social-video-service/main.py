@@ -182,14 +182,18 @@ def frame_timestamps(duration: float | None, cuts: list[float] | None = None) ->
 
 def extract_frame(video_path: str, ts: float, out: str) -> str | None:
     # -ss before -i seeks by keyframe without decoding the whole video
-    subprocess.run(
-        [
-            "ffmpeg", "-ss", f"{ts:.3f}", "-i", video_path,
-            "-frames:v", "1", "-vf", "scale=720:-2", "-q:v", "3",
-            out, "-y",
-        ],
-        capture_output=True, timeout=30,
-    )
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-ss", f"{ts:.3f}", "-i", video_path,
+                "-frames:v", "1", "-vf", "scale=720:-2", "-q:v", "3",
+                out, "-y",
+            ],
+            capture_output=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        # one stuck seek shouldn't fail the whole request; keep the other frames
+        return None
     return out if os.path.exists(out) and os.path.getsize(out) > 0 else None
 
 
