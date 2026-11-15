@@ -21,7 +21,10 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          # Pinned: "latest" makes the action look up the newest release via
+          # GitHub's API, which is rate limited on shared runners and failed a
+          # deploy. Bump this deliberately.
+          version: 3.1.0
 
       # Migrations first so the functions never run against a missing table.
       # Requires the SUPABASE_DB_PASSWORD secret (the database password from
