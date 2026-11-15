@@ -13,6 +13,7 @@ import { UnlockDialog } from "@/components/UnlockDialog";
 import { PaywallModal } from "@/components/PaywallModal";
 import { useEntitlements } from "@/components/EntitlementsProvider";
 import { sendReadyText } from "@/lib/readyText";
+import { interleave } from "@/lib/interleave";
 import { toast } from "@/hooks/use-toast";
 import { ItineraryData } from "@/types/itinerary";
 import { parseStructuredItinerary, stripPlanningSection, buildEditableItinerary, mergeEditedItinerary } from "@/lib/itineraryEdit";
@@ -1036,11 +1037,13 @@ const Index = () => {
       const mediaWithUrls = effectivePreferences.media.filter(m => m.url);
       if (mediaWithUrls.length > 0) {
         setIsAnalyzingMedia(true);
-        const allImageUrls: string[] = [];
-        for (const item of mediaWithUrls) {
-          if (item.type === 'image' && item.url) allImageUrls.push(item.url);
-          else if (item.type === 'video' && item.frameUrls?.length) allImageUrls.push(...item.frameUrls);
-        }
+        // Interleave so the analyzer's 20-image cap keeps some of every photo
+        // and video (each video sends up to 10 frames)
+        const allImageUrls = interleave(mediaWithUrls.map(item =>
+          item.type === 'image' && item.url ? [item.url]
+          : item.type === 'video' && item.frameUrls?.length ? item.frameUrls
+          : []
+        ));
         if (allImageUrls.length > 0) {
           const identified = await analyzeInspiration(allImageUrls);
           const newLocations = identified

@@ -3,6 +3,7 @@ import { Upload, X, Image as ImageIcon, Video, Loader2, Link } from "lucide-reac
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { interleave } from "@/lib/interleave";
 
 export interface MediaItem {
   type: 'image' | 'video';
@@ -217,7 +218,7 @@ export const MediaDropZone = forwardRef<MediaDropZoneHandle, MediaDropZoneProps 
     }));
 
     // Replace each placeholder with its result; drop the ones that failed
-    const allFrameUrls: string[] = [];
+    const framesPerVideo: string[][] = [];
     let firstError: string | null = null;
     const completed: (MediaItem | null)[] = mediaWithPlaceholders.map((item, idx) => {
       const resultIndex = idx - baseIndex;
@@ -228,12 +229,16 @@ export const MediaDropZone = forwardRef<MediaDropZoneHandle, MediaDropZoneProps 
         return null;
       }
       const { thumbnailUrl, frameUrls } = result.value;
-      allFrameUrls.push(...frameUrls);
+      framesPerVideo.push(frameUrls);
       return { type: 'video' as const, url: thumbnailUrl, preview: thumbnailUrl, uploading: false, frameUrls: frameUrls.length > 0 ? frameUrls : undefined };
     });
     onMediaChange(completed.filter((m): m is MediaItem => m !== null));
 
-    // One combined location-analysis pass over all imported videos' frames
+    // One combined location-analysis pass over all imported videos' frames.
+    // Interleave them (1st frame of each video, then 2nd, ...) so the
+    // analyzer's 20-image cap keeps frames from every video instead of
+    // spending it all on the first one or two.
+    const allFrameUrls = interleave(framesPerVideo);
     if (allFrameUrls.length > 0) onFramesReady?.(allFrameUrls);
 
     const succeeded = results.filter(r => r.status === 'fulfilled').length;
