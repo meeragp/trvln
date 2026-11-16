@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
+import { CostTracker, persistCost } from "../_shared/costs.ts";
 import { callGeminiWithFallback, type GeminiFailureKind } from "../_shared/gemini.ts";
 
 const corsHeaders = {
@@ -20,6 +21,11 @@ const USER_ERRORS: Record<GeminiFailureKind, { status: number; error: string }> 
 
 const RequestSchema = z.object({
   mediaUrls: z.array(z.string().url()).max(20),
+  // What the caller fed in: uploaded photos, frames pulled out of a video, or
+  // both in one pass. Vision billing is per image either way, but this is the
+  // only place that knows which inspiration source the dollars came from, so
+  // it is recorded on the cost row. Older clients omit it.
+  source: z.enum(["image", "video", "mixed"]).optional(),
 });
 
 serve(async (req) => {
@@ -39,7 +45,7 @@ serve(async (req) => {
       );
     }
 
-    const { mediaUrls } = validationResult.data;
+    const { mediaUrls, source } = validationResult.data;
 
     if (mediaUrls.length === 0) {
       return new Response(
@@ -139,6 +145,17 @@ If no locations can be identified from any images, return:
     if (result.failures.length > 0) console.warn(`Fell back to ${result.model}`);
 
     const data = result.data;
+
+    // Vision analysis is the priciest thing this function does — one Gemini
+    // call whose input scales with the number of images (a single imported
+    // video contributes several frames). Record it before parsing so a
+    // malformed response still leaves the spend accounted for. Priced against
+    // the model that actually answered, since Flash is the fallback.
+    const costs = new CostTracker();
+    costs.addGeminiOpenAI(`inspiration_${source ?? "media"}_analysis`, result.model, data.usage);
+    console.log("[cost] summary " + JSON.stringify(costs.summary()));
+    void persistCost(costs, { function_name: "analyze-inspiration", mode: source ?? "media" });
+
     const responseContent = data.choices?.[0]?.message?.content || "{}";
     
     console.log("Raw AI response:", responseContent);

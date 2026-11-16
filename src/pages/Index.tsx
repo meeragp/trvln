@@ -385,14 +385,20 @@ const Index = () => {
   const getHeaders = useCallback(() => functionHeaders(), []);
 
   // `error` is set when detection itself failed (as opposed to finding no
-  // locations), so callers don't blame the user's photos for it
-  const analyzeInspiration = useCallback(async (mediaUrls: string[]): Promise<{ destinations: IdentifiedDestination[]; error?: string }> => {
+  // locations), so callers don't blame the user's photos for it.
+  // `source` only labels the cost row the edge function writes — image uploads
+  // and video frames cost the same per image, but the spend is worth telling
+  // apart because one imported video is several frames.
+  const analyzeInspiration = useCallback(async (
+    mediaUrls: string[],
+    source: 'image' | 'video' | 'mixed',
+  ): Promise<{ destinations: IdentifiedDestination[]; error?: string }> => {
     if (mediaUrls.length === 0) return { destinations: [] };
     const fallbackError = "Location detection is unavailable right now. Add your destinations manually.";
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-inspiration`, {
         // The edge function accepts at most 20 images per call
-        method: "POST", headers: await getHeaders(), body: JSON.stringify({ mediaUrls: mediaUrls.slice(0, 20) }),
+        method: "POST", headers: await getHeaders(), body: JSON.stringify({ mediaUrls: mediaUrls.slice(0, 20), source }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return { destinations: [], error: typeof data.error === "string" ? data.error : fallbackError };
@@ -1051,8 +1057,11 @@ const Index = () => {
           : item.type === 'video' && item.frameUrls?.length ? item.frameUrls
           : []
         ));
+        const hasPhotos = mediaWithUrls.some(item => item.type === 'image' && item.url);
+        const hasVideoFrames = mediaWithUrls.some(item => item.type === 'video' && item.frameUrls?.length);
         if (allImageUrls.length > 0) {
-          const { destinations: identified, error: detectError } = await analyzeInspiration(allImageUrls);
+          const source = hasPhotos && hasVideoFrames ? 'mixed' : hasVideoFrames ? 'video' : 'image';
+          const { destinations: identified, error: detectError } = await analyzeInspiration(allImageUrls, source);
           if (detectError) toast({ title: "Couldn't identify locations from your media", description: detectError });
           const newLocations = identified
             .filter(d => d.confidence === 'high' || d.confidence === 'medium')
@@ -1372,7 +1381,7 @@ const Index = () => {
             onFramesReady={async (frameUrls) => {
               setIsIdentifyingLocations(true);
               try {
-                const { destinations: identified, error: detectError } = await analyzeInspiration(frameUrls);
+                const { destinations: identified, error: detectError } = await analyzeInspiration(frameUrls, 'video');
                 if (detectError) {
                   toast({ title: "Couldn't identify locations", description: detectError });
                   return;
