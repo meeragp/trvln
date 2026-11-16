@@ -11,6 +11,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // Edge function tests under supabase/ run on Deno (deno test), not here
+    include: ["src/**/*.test.{ts,tsx}"],
     // testing-library's auto-cleanup between tests registers via afterEach,
     // which it only finds when vitest exposes globals.
     globals: true,

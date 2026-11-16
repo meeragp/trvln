@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import tempfile
 import requests
@@ -86,6 +87,126 @@ def upload_frame(path: str) -> str | None:
     return f"{SUPABASE_URL}/storage/v1/object/public/inspiration-media/{file_name}"
 
 
+# Frames per video: at least MIN_FRAMES, and for quick-cut montages one per
+# scene up to MAX_FRAMES. analyze-inspiration takes 20 images per request
+# across all imported videos, so keep this well under 20.
+MIN_FRAMES = 5
+MAX_FRAMES = 10
+# ffmpeg scene score (0-1) above which a frame counts as a cut
+SCENE_THRESHOLD = 0.2
+# Shots shorter than this are merged into the next one (flashes, transitions)
+MIN_SCENE_SECONDS = 0.4
+
+
+def probe_duration(video_path: str) -> float | None:
+    """Video duration in seconds via ffprobe, or None if it can't be read."""
+    try:
+        out = subprocess.run(
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                video_path,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        duration = float(out.stdout.strip())
+        return duration if duration > 0 else None
+    except (ValueError, subprocess.TimeoutExpired):
+        return None
+
+
+def detect_scene_cuts(video_path: str) -> list[float]:
+    """Timestamps (seconds) where the picture changes to a new shot.
+    Runs on a 160px-wide copy so a full decode stays fast; returns [] if
+    detection fails, which falls back to evenly spaced frames."""
+    try:
+        out = subprocess.run(
+            [
+                "ffmpeg", "-hide_banner", "-i", video_path, "-an",
+                "-vf", f"scale=160:-2,select='gt(scene\\,{SCENE_THRESHOLD})',showinfo",
+                "-f", "null", "-",
+            ],
+            capture_output=True, text=True, timeout=60,
+        )
+    except subprocess.TimeoutExpired:
+        return []
+    return sorted(
+        float(m) for m in re.findall(r"Parsed_showinfo.*?pts_time:\s*([\d.]+)", out.stderr)
+    )
+
+
+def scene_segments(duration: float, cuts: list[float]) -> list[tuple[float, float]]:
+    """Split [0, duration] at the cuts, merging shots under MIN_SCENE_SECONDS."""
+    bounds = [0.0]
+    for cut in cuts:
+        if cut - bounds[-1] >= MIN_SCENE_SECONDS and duration - cut >= MIN_SCENE_SECONDS:
+            bounds.append(cut)
+    bounds.append(duration)
+    return list(zip(bounds, bounds[1:]))
+
+
+def frame_timestamps(duration: float | None, cuts: list[float] | None = None) -> list[float]:
+    """Pick when to grab frames.
+
+    - Unknown length: the opening seconds, where something is surely on screen.
+    - Many shots (quick-cut montage): the middle of each shot, so every clip is
+      seen once; past MAX_FRAMES shots, an even spread of them.
+    - Few shots (incl. one continuous take): MIN_FRAMES frames shared across the
+      shots by length, every shot getting at least one, each placed at the
+      centre of an equal slice of its shot (so never the first/last instant,
+      which is often a black frame, title card or end screen).
+    """
+    if not duration:
+        return [0.5, 1.5, 2.5, 3.5, 4.5][:MIN_FRAMES]
+
+    segments = scene_segments(duration, cuts or [])
+    n = len(segments)
+
+    if n > MAX_FRAMES:
+        segments = [segments[int((i + 0.5) * n / MAX_FRAMES)] for i in range(MAX_FRAMES)]
+        n = MAX_FRAMES
+
+    alloc = [1] * n
+    for _ in range(MIN_FRAMES - n):
+        # give the next frame to the shot with the longest gap per frame
+        k = max(range(n), key=lambda i: (segments[i][1] - segments[i][0]) / alloc[i])
+        alloc[k] += 1
+
+    return [
+        start + (end - start) * (j + 0.5) / count
+        for (start, end), count in zip(segments, alloc)
+        for j in range(count)
+    ]
+
+
+def extract_frame(video_path: str, ts: float, out: str) -> str | None:
+    # -ss before -i seeks by keyframe without decoding the whole video
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-ss", f"{ts:.3f}", "-i", video_path,
+                "-frames:v", "1", "-vf", "scale=720:-2", "-q:v", "3",
+                out, "-y",
+            ],
+            capture_output=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        # one stuck seek shouldn't fail the whole request; keep the other frames
+        return None
+    return out if os.path.exists(out) and os.path.getsize(out) > 0 else None
+
+
+def extract_frames(video_path: str, frames_dir: str) -> list[str]:
+    duration = probe_duration(video_path)
+    cuts = detect_scene_cuts(video_path) if duration else []
+    timestamps = frame_timestamps(duration, cuts)
+    outs = [os.path.join(frames_dir, f"frame_{i + 1}.jpg") for i in range(len(timestamps))]
+    with ThreadPoolExecutor(max_workers=len(timestamps)) as pool:
+        results = list(pool.map(lambda a: extract_frame(video_path, *a), zip(timestamps, outs)))
+    return [p for p in results if p]
+
+
 @app.get("/health")
 def health():
     # Report the running yt-dlp version so a deploy can be verified from the
@@ -143,43 +264,9 @@ def extract_video(req: ExtractRequest):
             error_msg = _summarize_ytdlp_error(dl.stderr, req.url)
             raise HTTPException(status_code=400, detail=f"Could not download video: {error_msg}")
 
-        # Extract 5 frames with ffmpeg using select filter (fast, no full decode)
         frames_dir = os.path.join(tmpdir, "frames")
         os.makedirs(frames_dir)
-        frame_pattern = os.path.join(frames_dir, "frame_%d.jpg")
-
-        ffmpeg = subprocess.run(
-            [
-                "ffmpeg", "-i", video_path,
-                "-vf", "select='eq(n\\,0)+eq(n\\,round(n_frames/4))+eq(n\\,round(n_frames/2))+eq(n\\,round(3*n_frames/4))+eq(n\\,n_frames-1)',scale=720:-2",
-                "-vsync", "vfr",
-                "-q:v", "3",
-                frame_pattern,
-                "-y",
-            ],
-            capture_output=True,
-            timeout=60,
-        )
-
-        frame_paths = sorted([
-            os.path.join(frames_dir, f)
-            for f in os.listdir(frames_dir)
-            if f.endswith(".jpg")
-        ])
-
-        if not frame_paths:
-            # Fallback: grab frames at fixed timestamps
-            for i, ts in enumerate(["00:00:01", "00:00:03", "00:00:05"]):
-                out = os.path.join(frames_dir, f"frame_{i+1}.jpg")
-                subprocess.run(
-                    ["ffmpeg", "-ss", ts, "-i", video_path, "-vframes", "1", "-q:v", "3", out, "-y"],
-                    capture_output=True, timeout=30,
-                )
-            frame_paths = sorted([
-                os.path.join(frames_dir, f)
-                for f in os.listdir(frames_dir)
-                if f.endswith(".jpg")
-            ])
+        frame_paths = extract_frames(video_path, frames_dir)
 
         if not frame_paths:
             raise HTTPException(status_code=500, detail="Failed to extract frames from video")
