@@ -33,6 +33,8 @@ const PreferencesSchema = z.object({
   foodDrink: z.array(z.string().max(50)).max(10).default([]),
   interests: z.array(z.string().max(50)).max(20).default([]),
   additionalNotes: z.string().max(5000).default(''),
+  // Who is travelling: 'solo' | 'couple' | 'friends' | 'family', or '' when not said
+  travelers: z.string().max(50).default(''),
 });
 
 const RequestSchema = z.object({
@@ -93,6 +95,7 @@ serve(async (req) => {
       foodDrink,
       interests,
       additionalNotes,
+      travelers,
     } = preferences;
 
     // Build budget labels
@@ -157,6 +160,7 @@ Dates: ${dateContext}
 ${noFlight ? "No flight needed" : flightContext}
 
 ## VIBE
+Traveling as: ${({ solo: 'Solo traveler', couple: 'A couple', friends: 'A group of friends', family: 'A family with kids' } as Record<string, string>)[travelers] || 'Not specified'}
 Atmosphere: ${atmosphere?.length > 0 ? atmosphere.join(", ") : "Not specified"}
 Adventure level: ${adventureLabels[adventureLevel] || adventureLevel || "Not specified"}
 Guided preference: ${guidedPreference || "some-guided"}

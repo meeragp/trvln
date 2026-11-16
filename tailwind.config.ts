@@ -15,17 +15,16 @@ export default {
   	extend: {
   		fontFamily: {
   			display: [
-  				'-apple-system',
-  				'BlinkMacSystemFont',
-  				'SF Pro Display',
-  				'Inter',
-  				'sans-serif'
+  				'Instrument Serif',
+  				'Georgia',
+  				'Times New Roman',
+  				'serif'
   			],
   			body: [
+  				'Geist',
   				'-apple-system',
   				'BlinkMacSystemFont',
-  				'SF Pro Text',
-  				'Inter',
+  				'Segoe UI',
   				'sans-serif'
   			],
   			sans: [
@@ -100,6 +99,7 @@ export default {
   				dark: 'hsl(var(--cream-dark))'
   			},
   			'warm-white': 'hsl(var(--warm-white))',
+  			marigold: 'hsl(var(--marigold))',
   			mahogany: {
   				DEFAULT: 'hsl(var(--mahogany))',
   				light: 'hsl(var(--mahogany-light))'
