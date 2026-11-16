@@ -136,6 +136,9 @@ type GenerationContext = {
   batchId: string;
   jobIdByTheme: Record<string, string>;
   runId: number;
+  // The batch's shared research (research-trip). Null when it never started
+  // or failed, or after a reload — each variant then researches for itself.
+  researchId: string | null;
 };
 
 const loadPendingBatch = (): PendingBatch | null => {
@@ -411,11 +414,31 @@ const Index = () => {
     return data.themes as { id: string; name: string; emoji: string; tagline?: string }[];
   }, [getHeaders]);
 
+  // Runs the research every variant shares — reading the request, resolving
+  // the destination, and every search but the theme's own — once per batch.
+  // The id is minted here so generate calls can carry it before this answers;
+  // the server waits for the stored research and falls back to researching
+  // the variant itself if it never arrives. Resolves false on failure.
+  const researchTrip = useCallback(async (
+    prefs: TripPreferences,
+    batchId: string,
+    researchId: string,
+  ): Promise<boolean> => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/research-trip`, {
+        method: "POST", headers: await getHeaders(), body: JSON.stringify({ preferences: prefs, batchId, researchId }),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }, [getHeaders]);
+
   const generateSingleItinerary = useCallback(async (
     prefs: TripPreferences,
     themeVariant: { id: string; name: string; emoji: string },
     onUpdate: (content: string) => void,
-    jobIds?: { jobId: string; batchId: string },
+    jobIds?: { jobId: string; batchId: string; researchId?: string },
     // Resume-on-unlock sends a different request body but reads the same
     // stream; everything below the fetch is shared.
     bodyOverride?: Record<string, unknown>,
@@ -681,7 +704,7 @@ const Index = () => {
         const displayContent = stripPlanningSection(updatedContent);
         setItineraries(prev => prev.map(it =>
           it.id === theme.id ? { ...it, content: displayContent } : it));
-      }, { jobId, batchId: ctx.batchId },
+      }, { jobId, batchId: ctx.batchId, ...(ctx.researchId ? { researchId: ctx.researchId } : {}) },
       resumeBatchId ? { completeBatchId: resumeBatchId, jobId } : undefined);
 
       // A stream cut short leaves nothing to show — often literally nothing.
@@ -767,7 +790,9 @@ const Index = () => {
     for (const it of itineraries) {
       if (it.jobId) jobIdByTheme[it.id] = it.jobId;
     }
-    return { preferences, batchId, jobIdByTheme, runId: runIdRef.current };
+    // The shared research id lived only in the lost context; the server
+    // researches a rebuilt variant itself.
+    return { preferences, batchId, jobIdByTheme, runId: runIdRef.current, researchId: null };
   }, [itineraries, preferences]);
 
   // ── Unlock (preview → paid trip) ───────────────────────────────────────────
@@ -1069,6 +1094,13 @@ const Index = () => {
         setIsAnalyzingMedia(false);
       }
 
+      // Themes and the shared research both depend only on the preferences, so
+      // they run together: the searches are the slow half and would otherwise
+      // wait on the theme call for nothing.
+      const batchId = crypto.randomUUID();
+      const researchId = crypto.randomUUID();
+      const researchDone = researchTrip(effectivePreferences, batchId, researchId);
+
       setIsSuggestingThemes(true);
       const themes = await suggestThemes(effectivePreferences);
       if (themes.length === 0) throw new Error("No themes came back for this trip — try adding more detail");
@@ -1082,11 +1114,18 @@ const Index = () => {
       // actually switches to them.
       const ctx: GenerationContext = {
         preferences: effectivePreferences,
-        batchId: crypto.randomUUID(),
+        batchId,
         jobIdByTheme: {},
         runId,
+        // Every variant of this trip reuses the one research pass, including
+        // the ones generated later when the user switches themes.
+        researchId,
       };
       generationContextRef.current = ctx;
+      // A failed pass is already marked failed server-side, so waiting
+      // variants fall back on their own; this just spares later variants the
+      // lookup.
+      void researchDone.then(ok => { if (!ok) ctx.researchId = null; });
       startedVariantsRef.current = new Set();
 
       const result = await enqueueVariant(themes[0], ctx);
@@ -1128,7 +1167,7 @@ const Index = () => {
         setIsAnalyzingMedia(false);
       }
     }
-  }, [preferences, suggestThemes, enqueueVariant, analyzeInspiration]);
+  }, [preferences, suggestThemes, researchTrip, enqueueVariant, analyzeInspiration]);
 
   const handleEdit = useCallback(async (editRequest: string) => {
     const current = itineraries[activeVariant];

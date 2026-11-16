@@ -88,7 +88,7 @@ Purchasers at 0 credits do **not** fall back to preview generation (explicit pro
 
 Charged prices: **$5 → 2 credits**, **$20 → 10 credits**. The initial unlock is the same $5/2-credit product with one credit auto-spent on the current trip — one SKU fewer to maintain, and the "this trip + 1 more" promise falls out of the ledger math.
 
-Cost reality (from the live `generation_costs` instrumentation, `_shared/costs.ts`): a full variant runs research (6–7 Perplexity calls, ~$0.03 in request fees alone) + a Sonnet plan call (~8k output tokens) + one Sonnet call per day. Preview gating saves the day-writing calls (the largest block for variants 2/3) but still pays for research + plan on every variant a user opens. Before launch, pull the real numbers:
+Cost reality (from the live `generation_costs` instrumentation, `_shared/costs.ts`): research runs once per batch in `research-trip` (request reading, destination resolution, Places dining and 5–6 Perplexity calls, recorded under `function_name = 'research-trip'` with the batch's `batch_id`), and each variant adds only its own activities search, then a Sonnet plan call (~8k output tokens) and one Sonnet call per day. Preview gating saves the day-writing calls (the largest block for variants 2/3) but still pays for the activities search + plan on every variant a user opens. Before launch, pull the real numbers:
 
 ```sql
 select mode, count(*), round(avg(total_usd), 4) as avg_usd,
