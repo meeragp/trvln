@@ -2,6 +2,22 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { CostTracker, persistCost } from "../_shared/costs.ts";
+import { PreferencesSchema, describeTrip } from "../_shared/tripPreferences.ts";
+import {
+  buildQuerySpecs,
+  type CityDining,
+  type DiningPlace,
+  MEAL_GROUPS,
+  readTrip,
+  type ResearchResult,
+  runResearch,
+  type SharedResearch,
+  THEME_SPECIFIC_KEY,
+  type TripReading,
+  type TripResearchRow,
+  waitForTripReading,
+  waitForTripResearch,
+} from "../_shared/research.ts";
 import { handleCreateCheckoutSession, handleConfirmCheckout, handleStripeWebhook } from "../_shared/stripeHttp.ts";
 // deploy-v3
 
@@ -33,35 +49,7 @@ async function resolveUserId(req: Request): Promise<string | null> {
   }
 }
 
-// Input validation schemas
-const PreferencesSchema = z.object({
-  media: z.array(z.object({
-    type: z.enum(['image', 'video']),
-    preview: z.string().max(10000).optional(),
-    url: z.string().max(1000).optional(), // Public URL from storage
-    name: z.string().max(200).optional(),
-  })).max(10).default([]),
-  cities: z.array(z.string().max(100)).max(20).default([]),
-  budgetAccommodation: z.number().min(0).max(100).default(50),
-  budgetFlight: z.number().min(0).max(100).default(50),
-  dateFlexibility: z.string().max(50).default('anytime'),
-  startDate: z.string().max(50).optional(),
-  endDate: z.string().max(50).optional(),
-  flexibleDays: z.number().min(1).max(14).optional(), // ± days flexibility when using exact dates
-  targetMonth: z.string().max(50).default(''),
-  durationFlexibility: z.string().max(50).default('1-week'),
-  durationDays: z.number().min(1).max(90).default(7),
-  noFlight: z.boolean().default(false),
-  departureCity: z.string().max(100).default(''),
-  flightDirectness: z.string().max(50).default('short-layover'),
-  atmosphere: z.array(z.string().max(50)).max(10).default([]),
-  adventureLevel: z.string().max(50).default('active'),
-  guidedPreference: z.string().max(50).default('some-guided'),
-  foodDrink: z.array(z.string().max(50)).max(10).default([]),
-  interests: z.array(z.string().max(50)).max(20).default([]),
-  additionalNotes: z.string().max(5000).default(''),
-});
-
+// Input validation schemas (PreferencesSchema is shared with research-trip)
 const ThemeVariantSchema = z.object({
   id: z.string().max(100),
   name: z.string().max(200),
@@ -80,7 +68,29 @@ const RequestSchema = z.object({
   // Resume-on-unlock: finish the locked days of an already-entitled batch's
   // job. Mutually exclusive with a normal generation.
   completeBatchId: z.string().uuid().optional(),
+  // The batch's shared research, being written by research-trip. Absent from
+  // older clients and after a reload, in which case this request researches
+  // the trip itself.
+  researchId: z.string().uuid().optional(),
 });
+
+// ── Shared batch research ────────────────────────────────────────────────────
+// research-trip's stored research is waited on through _shared/research.ts;
+// this is just the row lookup. undefined: no row yet. null: unusable, or the
+// lookup failed (e.g. the trip_research migration has not been applied) —
+// either way the variant stops waiting and researches for itself.
+async function lookupTripResearch(researchId: string): Promise<TripResearchRow | null | undefined> {
+  const { data, error } = await supabaseAdmin
+    .from("trip_research")
+    .select("status, batch_id, created_at, reading, research")
+    .eq("id", researchId)
+    .maybeSingle();
+  if (error) {
+    console.error("[research] reading trip_research failed:", error.message);
+    return null;
+  }
+  return (data as TripResearchRow | null) ?? undefined;
+}
 
 // ── Preview gating ───────────────────────────────────────────────────────────
 // Free (un-entitled) generations are truncated server-side: the primary
@@ -192,296 +202,6 @@ function redactChecklist(items: unknown, tier: Tier): {
   return { visible, lockedCounts };
 }
 
-
-// Helper function to call Perplexity for grounded web search.
-//
-// Every query is retried on 429. All six searches fire at once, and Perplexity
-// rate-limits the burst: production logs showed one query succeeding and five
-// returning `429 request_rate_limit_exceeded` within milliseconds. Because a
-// failed search returned empty rather than raising, that surfaced not as an
-// error but as an itinerary with no named restaurants — the model had nothing
-// to name. `label` identifies which search is retrying in the logs.
-async function searchWithPerplexity(
-  query: string,
-  apiKey: string,
-  label = "search",
-): Promise<{ content: string; citations: string[]; usage?: Record<string, unknown> }> {
-  const maxAttempts = 4;
-  let retryAfterMs = 0;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (attempt > 1) {
-      // Prefer the server's own retry-after. Otherwise back off steeply and
-      // jittered — the first fix used ~1s and production still showed the same
-      // query 429ing on its retry, so the delay has to clear the window rather
-      // than land just after it.
-      const backoffMs = retryAfterMs || 1500 * (attempt - 1) + Math.floor(Math.random() * 1200);
-      console.log(`[research] ${label} retrying in ${backoffMs}ms (attempt ${attempt})`);
-      await new Promise(r => setTimeout(r, backoffMs));
-    }
-
-    const result = await runPerplexityQuery(query, apiKey, label);
-    if (result.ok) return result.value;
-    if (!result.retryable) return { content: '', citations: [] };
-    retryAfterMs = result.retryAfterMs ?? 0;
-  }
-
-  console.error(`[research] ${label} exhausted ${maxAttempts} attempts — returning empty`);
-  return { content: '', citations: [] };
-}
-
-async function runPerplexityQuery(
-  query: string,
-  apiKey: string,
-  label: string,
-): Promise<
-  | { ok: true; value: { content: string; citations: string[]; usage?: Record<string, unknown> } }
-  | { ok: false; retryable: boolean; retryAfterMs?: number }
-> {
-  try {
-    console.log("Perplexity search query:", query);
-
-    const response = await fetch('https://api.perplexity.ai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'sonar',
-        messages: [
-          { 
-            role: 'system', 
-            content: 'You are a travel research assistant. Provide specific, detailed recommendations with exact names of restaurants, hotels, tours, and activities. When researching hotels, prioritize options within the specified price range and include nightly rates. If most options exceed the budget, explicitly note this and suggest alternatives. Include price ranges when available. Be comprehensive but concise.\n\nWhen a query carries a SOURCING instruction, treat it as part of the question rather than as advice. It asks you to attribute, not to search anywhere in particular — search as you normally would, then say where each answer came from. Where it asks you to check a published schedule, fee or rule against first-hand accounts, report both and say plainly when they disagree — a discrepancy is a finding, not something to average away. Never present a fact you found in one place as though it were corroborated, and say when you could not find something at all rather than substituting the nearest thing you could find.'
-          },
-          { role: 'user', content: query }
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      // Include the body: a bare status can't distinguish a revoked key from an
-      // exhausted balance from a malformed header, and this failure is silent
-      // enough already.
-      const errorBody = await response.text().catch(() => '');
-      console.error(`Perplexity API error (${label}):`, response.status, errorBody.slice(0, 500));
-      // Perplexity does not always send retry-after; when it does, it beats guessing.
-      const retryAfter = Number(response.headers.get("retry-after"));
-      // A rate limit clears on its own; a 401/400 will not.
-      return {
-        ok: false,
-        retryable: response.status === 429 || response.status >= 500,
-        retryAfterMs: Number.isFinite(retryAfter) && retryAfter > 0
-          ? Math.min(retryAfter * 1000, 8000)
-          : undefined,
-      };
-    }
-
-    const data = await response.json();
-    return {
-      ok: true,
-      value: {
-        content: data.choices?.[0]?.message?.content || '',
-        citations: data.citations || [],
-        usage: data.usage,
-      },
-    };
-  } catch (error) {
-    console.error(`Perplexity search error (${label}):`, error);
-    return { ok: false, retryable: true };
-  }
-}
-
-// ============================================================================
-// GOOGLE PLACES DINING BACKBONE
-//
-// Web research reads editorial coverage, and editorial food coverage is
-// dinner-shaped: "where to eat in X" articles rarely name a breakfast café,
-// so for destinations whose blogs cover only dinner (Whistler, most resort
-// towns) the morning and midday slots went out empty — the roster rules
-// correctly refuse to invent names, but the research never supplied any.
-// Google Maps has no such bias: it lists every operating café with its live
-// rating and review history. So dining names are grounded on Places data
-// first, and the web research supplies texture (what to order, whether to
-// book, what the room is like) on top.
-//
-// Fail-soft throughout: a missing key or a failed request returns nothing and
-// generation proceeds on web research alone, exactly as before.
-// ============================================================================
-
-type DiningPlace = {
-  name: string;
-  rating: number;
-  ratingCount: number;
-  price: string; // "$".."$$$$", or "" when Maps has no price level
-  address: string;
-  mapsUrl: string;
-  wellKnown?: boolean; // set at selection: heavily-trafficked pick vs quieter find
-};
-type CityDining = { city: string; meals: Record<string, DiningPlace[]> };
-
-// The form's food & drink ids, as words a Maps text search understands. An id
-// with no mapping passes through as-is so free-form values still steer.
-const FOOD_PREF_PHRASE: Record<string, string> = {
-  local: "serving regional specialties",
-  casual: "casual",
-  romantic: "romantic",
-  family: "family-friendly",
-  party: "lively",
-};
-
-// One search per meal period plus one that hunts what the traveler could not
-// pull up themselves: Maps text relevance matches review language, so asking
-// for "underrated" and "hidden gem" surfaces the places reviewers describe
-// that way — loved rather than famous. The traveler's food preferences steer
-// the dinner search, where they express a kind of evening; breakfast and
-// lunch stay broad because a café is a café whatever the trip's vibe.
-const MEAL_GROUPS = ["Breakfast", "Lunch", "Dinner", "Local favorites"] as const;
-
-function buildMealSearches(foodPrefs: string[]): { meal: string; query: (city: string) => string }[] {
-  const prefWords = foodPrefs
-    .map(p => FOOD_PREF_PHRASE[p.trim().toLowerCase()] ?? p.trim())
-    .filter(Boolean)
-    .slice(0, 2); // two qualifiers keep the query a phrase, not a word salad
-  const dinnerQualifier = prefWords.length ? `${prefWords.join(" and ")} ` : "";
-  return [
-    { meal: "Breakfast", query: c => `best breakfast cafes and bakeries in ${c}` },
-    { meal: "Lunch", query: c => `best casual lunch restaurants in ${c}` },
-    { meal: "Dinner", query: c => `best ${dinnerQualifier}dinner restaurants in ${c}` },
-    { meal: "Local favorites", query: c => `underrated hidden gem restaurants local favorites in ${c}` },
-  ];
-}
-
-const PRICE_LEVEL_LABEL: Record<string, string> = {
-  PRICE_LEVEL_INEXPENSIVE: "$",
-  PRICE_LEVEL_MODERATE: "$$",
-  PRICE_LEVEL_EXPENSIVE: "$$$",
-  PRICE_LEVEL_VERY_EXPENSIVE: "$$$$",
-};
-
-async function placesTextSearch(textQuery: string, apiKey: string): Promise<DiningPlace[]> {
-  try {
-    const response = await fetch("https://places.googleapis.com/v1/places:searchText", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Goog-Api-Key": apiKey,
-        "X-Goog-FieldMask":
-          "places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.businessStatus,places.shortFormattedAddress,places.googleMapsUri",
-      },
-      // The API's maximum page: the quieter-find pool selects from below the
-      // top of the ranking, so the deeper the page, the more there is to find.
-      body: JSON.stringify({ textQuery, pageSize: 20 }),
-    });
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      console.error(`[places] ${response.status} for "${textQuery}": ${body.slice(0, 300)}`);
-      return [];
-    }
-    const data = await response.json();
-    type RawPlace = {
-      displayName?: { text?: unknown };
-      rating?: unknown;
-      userRatingCount?: unknown;
-      priceLevel?: unknown;
-      businessStatus?: unknown;
-      shortFormattedAddress?: unknown;
-      googleMapsUri?: unknown;
-    };
-    const places: RawPlace[] = Array.isArray(data.places) ? data.places : [];
-    return places
-      .filter(p => (p.businessStatus ?? "OPERATIONAL") === "OPERATIONAL")
-      .map(p => ({
-        name: typeof p.displayName?.text === "string" ? p.displayName.text : "",
-        rating: typeof p.rating === "number" ? p.rating : 0,
-        ratingCount: typeof p.userRatingCount === "number" ? p.userRatingCount : 0,
-        price: PRICE_LEVEL_LABEL[String(p.priceLevel ?? "")] ?? "",
-        address: typeof p.shortFormattedAddress === "string" ? p.shortFormattedAddress : "",
-        mapsUrl: typeof p.googleMapsUri === "string" ? p.googleMapsUri : "",
-      }))
-      .filter(p => p.name);
-  } catch (error) {
-    console.error(`[places] search failed for "${textQuery}":`, error);
-    return [];
-  }
-}
-
-// The floor keeps out places nobody has vouched for — a 5.0★ with 12 reviews
-// is unverified, and a mountain town's real café clears 25 reviews easily.
-const MIN_PLACE_RATING = 4.0;
-const MIN_PLACE_REVIEWS = 25;
-
-// Selection deliberately does NOT rank by popularity alone. Review volume
-// measures how trafficked a place is, not how good it is, and a list sorted
-// by it is exactly the result the traveler gets from a two-second Maps
-// search — the opposite of a recommendation. Each meal gets two pools: a few
-// heavily-trafficked picks as the reliable floor, and as many equally-rated
-// quieter finds — the highest-rated places the crowd hasn't got to, least
-// reviewed first among equals. The labels travel into the prompt so the model
-// can choose the quieter one on purpose when it fits the traveler better.
-const WELL_KNOWN_PER_MEAL = 4;
-const QUIETER_PER_MEAL = 4;
-const QUIETER_MIN_RATING = 4.4;
-
-function pickMealOptions(candidates: DiningPlace[]): DiningPlace[] {
-  const eligible = candidates.filter(
-    p => p.rating >= MIN_PLACE_RATING && p.ratingCount >= MIN_PLACE_REVIEWS,
-  );
-  const traffic = (p: DiningPlace) => p.rating * Math.log10(p.ratingCount + 1);
-  const wellKnown = [...eligible]
-    .sort((a, b) => traffic(b) - traffic(a))
-    .slice(0, WELL_KNOWN_PER_MEAL)
-    .map(p => ({ ...p, wellKnown: true }));
-  const taken = new Set(wellKnown.map(p => p.name));
-  const quieter = eligible
-    .filter(p => !taken.has(p.name) && p.rating >= QUIETER_MIN_RATING)
-    .sort((a, b) => b.rating - a.rating || a.ratingCount - b.ratingCount)
-    .slice(0, QUIETER_PER_MEAL)
-    .map(p => ({ ...p, wellKnown: false }));
-  return [...wellKnown, ...quieter];
-}
-
-// Four requests per city; the cap bounds cost on multi-stop trips. Cities
-// come ordered as the trip visits them, so the ones cut are the tail stops.
-const MAX_PLACES_CITIES = 4;
-
-async function fetchDiningPlaces(
-  cities: string[],
-  apiKey: string | undefined,
-  foodPrefs: string[],
-): Promise<{ dining: CityDining[]; requests: number }> {
-  if (!apiKey) {
-    console.warn("[places] GOOGLE_PLACES_API_KEY not configured — dining grounds on web research only");
-    return { dining: [], requests: 0 };
-  }
-  if (cities.length === 0) return { dining: [], requests: 0 };
-
-  const searches = buildMealSearches(foodPrefs);
-  let requests = 0;
-  const dining = await Promise.all(cities.slice(0, MAX_PLACES_CITIES).map(async city => {
-    const found: Record<string, DiningPlace[]> = {};
-    await Promise.all(searches.map(async ({ meal, query }) => {
-      requests++;
-      found[meal] = await placesTextSearch(query(city), apiKey);
-    }));
-    // Groups are selected in MEAL_GROUPS order and a name keeps its first
-    // slot: "Local favorites" overlaps the meal searches, and a place listed
-    // twice would read as two options where the traveler has one.
-    const meals: Record<string, DiningPlace[]> = {};
-    const seen = new Set<string>();
-    for (const meal of MEAL_GROUPS) {
-      const picked = pickMealOptions((found[meal] ?? []).filter(p => !seen.has(p.name)));
-      for (const p of picked) seen.add(p.name);
-      meals[meal] = picked;
-    }
-    return { city, meals };
-  }));
-
-  return {
-    dining: dining.filter(d => Object.values(d.meals).some(m => m.length > 0)),
-    requests,
-  };
-}
 
 // ============================================================================
 // STABLE SYSTEM PROMPT CORE
@@ -1584,7 +1304,7 @@ serve(async (req) => {
       );
     }
 
-    const { preferences, themeVariant, jobId, batchId, completeBatchId } = validationResult.data;
+    const { preferences, themeVariant, jobId, batchId, completeBatchId, researchId } = validationResult.data;
     registeredJobId = jobId;
 
     // Which signed-in user (if any) this request belongs to. Attribution for
@@ -1692,109 +1412,8 @@ serve(async (req) => {
       additionalNotes,
     } = preferences;
 
-    // Build budget context
-    const getBudgetLabel = (value: number) => {
-      if (value <= 25) return { label: "Budget", accommodation: "$0-$50/night", daily: "$50-80/day" };
-      if (value <= 50) return { label: "Moderate", accommodation: "$50-$100/night", daily: "$100-150/day" };
-      if (value <= 75) return { label: "Comfortable", accommodation: "$100-$200/night", daily: "$200-300/day" };
-      return { label: "Luxury", accommodation: "$200+/night", daily: "$400+/day" };
-    };
-
-    const getFlightBudget = (value: number) => {
-      if (value <= 25) return "$100-$300";
-      if (value <= 50) return "$300-$600";
-      if (value <= 75) return "$600-$1000";
-      return "$1000+";
-    };
-
-    const budgetInfo = getBudgetLabel(budgetAccommodation);
-    const flightBudget = getFlightBudget(budgetFlight);
-
-    // Build duration context
-    const computeInclusiveDays = (startISO?: string, endISO?: string) => {
-      if (!startISO || !endISO) return null;
-      const start = new Date(startISO);
-      const end = new Date(endISO);
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
-      const diffMs = end.getTime() - start.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      return diffDays + 1; // inclusive
-    };
-
-    let durationContext = "";
-
-    // If user chose exact dates, calculate base duration and apply flexibility
-    if (dateFlexibility === "strict") {
-      const daysFromDates = computeInclusiveDays(startDate, endDate);
-      if (daysFromDates) {
-        if (flexibleDays && flexibleDays > 0) {
-          // User has exact dates but with ± N days flexibility
-          const minDays = Math.max(1, daysFromDates - flexibleDays);
-          const maxDays = daysFromDates + flexibleDays;
-          durationContext = `${minDays}-${maxDays} days (base: ${daysFromDates} days, ±${flexibleDays} days flexible)`;
-        } else {
-          durationContext = `exactly ${daysFromDates} days`;
-        }
-      } else {
-        durationContext = "dates provided but duration unclear";
-      }
-    } else {
-      switch (durationFlexibility) {
-        case "weekend":
-          durationContext = "2-3 day weekend trip";
-          break;
-        case "long-weekend":
-          durationContext = "4-5 day long weekend";
-          break;
-        case "1-week":
-          durationContext = "7 day trip";
-          break;
-        case "2-weeks":
-          durationContext = "14 day trip";
-          break;
-        case "strict":
-          durationContext = `exactly ${durationDays} days`;
-          break;
-        case "flexible-days":
-          durationContext = `approximately ${durationDays} days (±2 days flexible)`;
-          break;
-        default:
-          durationContext = "flexible duration - suggest optimal length";
-      }
-    }
-
-    // Build date context
-    let dateContext = "";
-    switch (dateFlexibility) {
-      case "strict":
-        if (startDate && endDate) {
-          if (flexibleDays && flexibleDays > 0) {
-            // Exact dates with flexibility - AI can extend trip by ± N days on either end
-            dateContext = `Target dates: ${startDate} to ${endDate} (±${flexibleDays} days flexible on either end). You may start up to ${flexibleDays} days earlier or end up to ${flexibleDays} days later if it improves the trip. Choose what works best for the destination and activities.`;
-          } else {
-            dateContext = `Fixed dates: ${startDate} to ${endDate}`;
-          }
-        } else {
-          dateContext = "Specific dates (not provided)";
-        }
-        break;
-      case "flexible-days":
-        dateContext = startDate ? `Around ${startDate} (±few days flexible)` : "Flexible around specific dates";
-        break;
-      case "month":
-        dateContext = targetMonth ? `Target: ${targetMonth}` : "Specific month/season";
-        break;
-      default:
-        dateContext = "Anytime - recommend best time to visit";
-    }
-
-    // Build vibe context
-    const guidedLabels: Record<string, string> = {
-      'fully-guided': 'Prefer guided tours and organized activities',
-      'some-guided': 'Mix of guided activities and self-exploration',
-      'self-guided': 'Self-guided only - no guided tours, DIY everything'
-    };
-    const guidedLabel = guidedLabels[guidedPreference as string] || 'No preference';
+    const trip = describeTrip(preferences);
+    const { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel } = trip;
 
     // Theme variant context
     let themeContext = "";
@@ -1808,187 +1427,21 @@ This itinerary MUST embody the "${themeVariant.name}" theme throughout.
     }
 
     // ============================================
-    // READING THE REQUEST
+    // READING THE REQUEST, RESOLVING THE DESTINATION
     // ============================================
-    // What separates a planned trip from a generated one is mostly not the
-    // establishment names — it is that someone read the request closely enough
-    // to know what this person would find disappointing. That reading has to
-    // happen before anything else, because it decides what gets left out, and
-    // leaving things out is where taste lives.
-    //
-    // This pass does not pick sources. An earlier version did, and it was the
-    // wrong lever twice over: the model already knows an alpine club beats a
-    // tourism board on snowpack, and a directive naming sources competes with
-    // the actual question for retrieval. What the model cannot supply on its
-    // own is this traveler's standard for a vague word, so that is what is
-    // asked for here.
-    //
-    // Kicked off before destination resolution and awaited after it: this
-    // describes the shape of the trip, not the place, so it neither needs the
-    // resolved destination nor should wait behind it.
-    type SourcePlan = {
-      tripCharacter?: string;
-      interpretations?: string[];
-      avoid?: string[];
-    };
-
-    const sourcePlanPromise: Promise<SourcePlan | null> = timePhase("request_reading", async () => {
-      try {
-        const strategyPrompt = `Read this travel request the way an experienced human travel planner would before doing any research — not to plan the trip, but to work out what this particular person is actually asking for.
-
-Three things:
-
-1. **What kind of trip is this really?** One concrete sentence. "A first trip abroad with an anxious parent" and "a self-guided traverse by someone who hikes every weekend" produce completely different itineraries to the same destination.
-
-2. **Restate their subjective words as tests.** "Off the beaten path", "authentic", "hidden gem", "local", "chill", "romantic", "epic" are useless as search terms — every listicle claims all of them. Say what each would have to mean for a place to qualify on THIS trip, judged relative to the destination rather than in the abstract. Empty array if they used none.
-
-3. **What would make this itinerary feel canned to THIS person?** Name the obvious inclusions that would signal nobody read their request — the specific landmark, the kind of restaurant, the pacing mistake. Be concrete enough that a planner could check a draft against it.
-
-The traveler's request:
-- What they described: ${additionalNotes || "Not specified"}
-- Atmosphere: ${atmosphere?.join(", ") || "no preference"}
-- Interests (ranked): ${interests?.join(" > ") || "no preference"}
-- Adventure level: ${adventureLevel || "no preference"}
-- Guided vs self-serve: ${guidedLabel}
-- Food & drink: ${foodDrink?.join(", ") || "no preference"}
-- Budget: ${budgetInfo.label} (${budgetInfo.accommodation})
-- Duration: ${durationContext}
-- Timing: ${dateContext}
-${themeVariant?.name ? `- Itinerary theme: ${themeVariant.name}` : ""}
-
-Respond with ONLY a JSON object in this shape:
-{
-  "tripCharacter": "one concrete sentence",
-  "interpretations": ["each subjective word restated as a test a place must pass"],
-  "avoid": ["specific things that would read as generic to this traveler"]
-}
-
-Worked example, for "hut to hut, no driving, want to get away from the crowds" — six days, self-guided, active:
-{
-  "tripCharacter": "A self-guided six-day mountain traverse sleeping in huts, by someone fit enough to carry a pack who is specifically trying to get away from day-trip crowds.",
-  "interpretations": ["'Away from the crowds' here means huts and valleys the cable-car day-trippers cannot reach on foot in an afternoon — not simply places less famous than the headline peak. A place qualifies if reaching it costs a half day of walking, or a connection the tour buses do not run."],
-  "avoid": ["The photographed viewpoint ten minutes from a cable car station — it is the most crowded spot in the range and its presence would prove nobody read the request.", "A rest day parked in a resort town; this traveler wants the walking, not the shopping street.", "Restaurants in valley towns the route never descends into."]
-}
-
-No explanation. Just the JSON object.`;
-
-        const strategyResponse = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST",
-          headers: {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: "claude-haiku-4-5",
-            messages: [{ role: "user", content: strategyPrompt }],
-            // Seven topic directives plus the interpretations run long.
-            max_tokens: 1200,
-          }),
-        });
-
-        if (!strategyResponse.ok) {
-          console.error("Source strategy pass failed:", strategyResponse.status);
-          return null;
-        }
-
-        const strategyData = await strategyResponse.json();
-        costs.addAnthropic("request_reading", "claude-haiku-4-5", strategyData.usage);
-        const raw = strategyData.content?.[0]?.text?.trim() ?? "";
-        const parsed = JSON.parse(raw.replace(/```[a-z]*\n?/gi, "").trim());
-
-        // Clamp before this reaches a query: the directives are concatenated
-        // into every Perplexity prompt, and a runaway generation here would
-        // bury the actual question underneath its own sourcing advice.
-        const clamp = (s: unknown, max: number) =>
-          typeof s === "string" && s.trim() ? s.trim().slice(0, max) : undefined;
-
-        const strList = (v: unknown, max: number, cap: number) =>
-          Array.isArray(v) ? v.map((i: unknown) => clamp(i, max)).filter(Boolean).slice(0, cap) as string[] : [];
-
-        const plan: SourcePlan = {
-          tripCharacter: clamp(parsed?.tripCharacter, 300),
-          interpretations: strList(parsed?.interpretations, 500, 4),
-          avoid: strList(parsed?.avoid, 300, 5),
-        };
-        console.log("Request reading:", JSON.stringify(plan, null, 2));
-        return plan;
-      } catch (err) {
-        console.error("Source strategy pass failed — using baseline sourcing only:", err);
-        return null;
-      }
+    // With a researchId, research-trip is doing this once for the whole batch
+    // (see _shared/research.ts): every variant then plans the same trip, and
+    // only this theme's activities question is asked here. Without one — an
+    // older client, a reload, or a research-trip that never started — this
+    // request reads and researches the trip itself, exactly as before.
+    const sharedReading = researchId
+      ? await timePhase("shared_reading_wait", () =>
+        waitForTripReading(() => lookupTripResearch(researchId), batchId ?? null))
+      : null;
+    const reading: TripReading = sharedReading ?? await readTrip({
+      preferences, trip, themeName: themeVariant?.name, anthropicKey: ANTHROPIC_API_KEY, costs, timePhase,
     });
-
-    // ============================================
-    // DESTINATION RESOLUTION PASS
-    // When no explicit city is given, ask Claude Haiku to pick the best
-    // match before Perplexity runs, so all research is destination-specific.
-    // ============================================
-    let resolvedCities: string[] = [...(cities ?? [])];
-    let destinationWasResolved = false;
-
-    if (resolvedCities.length === 0) {
-      console.log("No explicit cities — resolving destination from preferences...");
-      try {
-        const resolutionPrompt = `You are a travel destination expert. Based on the traveler's preferences below, choose 1-2 destinations that best fit. Be decisive and concrete — a place a traveler can actually plan around, never a continent or a vague area like "Southeast Asia".
-
-Pick the unit that matches how the trip actually moves:
-- A trip based in one place is a city: "Chiang Mai, Thailand".
-- A trip that moves through an area — a road trip, a thru-hike, a hut-to-hut trek, island hopping, a wine route — is the region plus the anchor towns that bound it: "Dolomites, Italy (Cortina d'Ampezzo to Ortisei)". Naming only the gateway city would send the research to the wrong place, because the trip happens between the towns, not in one of them.
-
-Preferences:
-- What they described: ${additionalNotes || "Not specified"}
-- Atmosphere: ${atmosphere?.join(", ") || "no preference"}
-- Interests: ${interests?.join(", ") || "no preference"}
-- Adventure level: ${adventureLevel || "active"}
-- Food preferences: ${foodDrink?.join(", ") || "no preference"}
-- Accommodation budget: ${budgetInfo.label} (${budgetInfo.accommodation})
-- Flight budget: ${noFlight ? "no flight needed (local/ground trip)" : flightBudget + " round trip"}
-- Departing from: ${departureCity || "unknown"}
-- Travel timing: ${dateContext}
-- Duration: ${durationContext}
-
-Respond with ONLY a JSON array of 1-2 destination strings. Examples:
-["Lisbon, Portugal"]
-["Chiang Mai, Thailand", "Bangkok, Thailand"]
-["Dolomites, Italy (Cortina d'Ampezzo to Ortisei)"]
-["Kii Peninsula, Japan (Kumano Kodo, Tanabe to Nachi)"]
-
-No explanation. Just the JSON array.`;
-
-        const resolutionResponse = await timePhase("destination_resolution", () =>
-          fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "x-api-key": ANTHROPIC_API_KEY,
-              "anthropic-version": "2023-06-01",
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-haiku-4-5",
-              messages: [{ role: "user", content: resolutionPrompt }],
-              // Region answers carry their anchor towns, so they run longer than a bare city name.
-              max_tokens: 200,
-            }),
-          }));
-
-        if (resolutionResponse.ok) {
-          const resolutionData = await resolutionResponse.json();
-          costs.addAnthropic("destination_resolution", "claude-haiku-4-5", resolutionData.usage);
-          const resolutionText = resolutionData.content?.[0]?.text?.trim() ?? "";
-          // Strip any accidental code fences
-          const cleaned = resolutionText.replace(/```[a-z]*\n?/gi, "").trim();
-          const parsed = JSON.parse(cleaned);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            resolvedCities = parsed.filter((d: unknown) => typeof d === "string");
-            destinationWasResolved = true;
-            console.log("Resolved destinations:", resolvedCities);
-          }
-        }
-      } catch (err) {
-        console.error("Destination resolution failed — proceeding without explicit cities:", err);
-      }
-    }
+    const { resolvedCities, destinationWasResolved, sourcePlan } = reading;
 
     // Build inspiration context
     let inspirationContext = "";
@@ -2043,138 +1496,42 @@ ${additionalNotes || "None provided"}
     // PERPLEXITY WEB SEARCH FOR GROUNDED RESEARCH
     // ============================================
     console.log("Starting Perplexity grounded research...");
-
-    const destinationStr = resolvedCities.length > 0 ? resolvedCities.join(', ') : 'popular travel destinations';
-    const interestsStr = interests?.length > 0 ? interests.join(', ') : 'general sightseeing';
-    const foodStr = foodDrink?.length > 0 ? foodDrink.join(', ') : 'local cuisine';
-    const themeStr = themeVariant?.name || '';
-    const currentYear = new Date().getFullYear();
-
-    // The traveler's own words are usually the most specific thing in the
-    // request ("hut to hut", "no driving", "travelling with a toddler"). They
-    // used to reach only the final prompt, so the research never saw the trip
-    // the user actually described.
+    const searchSpecs = buildQuerySpecs({ preferences, trip, reading, themeName: themeVariant?.name });
+    // The traveler's own words, trimmed as the research queries use them.
     const tripNotes = (additionalNotes ?? '').trim().slice(0, 500);
-    const notesClause = tripNotes
-      ? ` The traveler describes the trip as: "${tripNotes}". Prioritise recommendations that fit that description.`
-      : '';
+    const ownSpecs = searchSpecs.filter(s => s.key === THEME_SPECIFIC_KEY);
+    const batchSpecs = searchSpecs.filter(s => s.key !== THEME_SPECIFIC_KEY);
+    const researchArgs = {
+      resolvedCities, foodPrefs: foodDrink ?? [], perplexityKey: PERPLEXITY_API_KEY,
+      placesKey: GOOGLE_PLACES_API_KEY, costs, timePhase,
+    };
 
-    // Determine trip length for context-aware queries
-    const tripDaysNum = durationDays || 7;
-
-    // Started before destination resolution; collected here.
-    const sourcePlan = await sourcePlanPromise;
-
-    // Which sources are worth reading is something the model already knows; an
-    // instruction naming them mostly competes with the question for retrieval,
-    // and an earlier version of this ran longer than the questions it was
-    // attached to. What the model will not volunteer is where a given number
-    // came from — unasked, a departure time arrives with no way to tell the
-    // operator's timetable from a blog post six years stale. That is a
-    // reporting contract, not knowledge, so it is stated, kept to one sentence,
-    // and attached only to the topics carrying facts that expire.
-    const SOURCING_CONTRACT = ` For any schedule, fare, fee, permit or opening window, name the operator or authority it came from, and say so when recent first-hand accounts contradict it. Flag anything you found in only one place.`;
-    const factualTopics = new Set(['nearbyAndTransport', 'seasonal', 'planning', 'flights']);
-    const sourceClause = (key: string) => (factualTopics.has(key) ? SOURCING_CONTRACT : '');
-
-    // Vague words the traveler used, restated as tests. Injected where taste
-    // decides the answer — asking a search engine for "hidden gems" returns the
-    // pages that call themselves that, which is the opposite of the request.
-    const interpretationClause = sourcePlan?.interpretations?.length
-      ? ` Apply the following as tests a place must pass, not as phrases to match: ${sourcePlan.interpretations.join(" ")}`
-      : "";
-
-    // Keyed so a conditional query can be added without shifting the indices
-    // the context block reads from.
-    const searchSpecs: { key: string; query: string }[] = [
-      // Activities and things to do. Asked for texture rather than a ranking:
-      // "best things to do in X" is the query the listicle was written to
-      // answer, and it returns the listicle no matter what sources are
-      // preferred. What a day is actually like is what an itinerary is built
-      // from, and what is overrated is as useful as what is good.
-      {
-        key: 'activities',
-        query: `What is genuinely worth doing in ${destinationStr} for ${interestsStr} travelers, and what is each one actually like to do? For every recommendation: the specific name, what makes it worth the time, the time of day it is best and why, how long it realistically takes including getting there, and what it costs. Then cover two more things: what is overrated here and what people who know the place do instead, and which areas reward an unstructured hour on foot and what you would actually come across in them.${themeStr ? ` Weight this toward ${themeStr}.` : ''} ${budgetInfo.label} budget.${notesClause} Judge how well-trodden something is relative to ${destinationStr} itself — what people who know this place consider the tourist trail — not by how famous it is to an outsider.${interpretationClause}${sourceClause('activities')}`,
-      },
-
-      // Restaurants and food scene — emphasise currently operating
-      {
-        key: 'restaurants',
-        query: `Where should someone actually eat in ${destinationStr} for ${foodStr}, confirmed still open and trading as of ${currentYear}? Exclude anything closed, temporarily closed, or of uncertain operating status. For each: the name, the neighborhood, what to order there, what a meal costs, what the room and the crowd are like and which kind of evening it suits, and whether it needs booking and how far ahead. Cover the whole range a traveler on this trip would really use across a week — the everyday place that is good every time and the one worth dressing up for — not a ranked list of the same destination restaurants. Cover ALL THREE MEALS, not only dinner: name the breakfast and coffee places — cafés, bakeries, brunch spots — and the casual lunch stops, as well as the dinner rooms. An itinerary needs somewhere real to eat every morning and midday, and dinner-only coverage cannot fill those slots. ${budgetInfo.label} budget.${tripNotes ? ` The traveler describes the trip as: "${tripNotes}" — if this trip spends nights somewhere without restaurants nearby (a mountain hut, a lodge, a remote village, a boat), say so and name where meals are actually eaten there instead.` : ''}${interpretationClause}${sourceClause('restaurants')}`,
-      },
-
-      // Where to sleep, in whatever form this trip actually needs
-      {
-        key: 'accommodation',
-        query: `Where should someone stay in ${destinationStr} at ${budgetInfo.label} level, ${budgetInfo.accommodation}? ${startDate && endDate ? `For dates: check-in ${startDate}, check-out ${endDate}.` : targetMonth ? `For travel in ${targetMonth}.` : ''} For each: the specific name, the nightly rate, exactly where it sits and what that means for getting around, what it is actually like to stay there, what the immediate area is like in the evening, and what a night includes.${tripNotes ?` The traveler describes the trip as: "${tripNotes}" — include the kinds of lodging this trip actually requires (for example mountain huts or refuges, guesthouses, campsites, lodges, hostels, ryokan), not only conventional hotels, and note how each is booked and what a night includes such as half board.` : ''}${interpretationClause}${sourceClause('accommodation')}`,
-      },
-
-      // Where the trip goes and how it moves. Deliberately not branched on
-      // whether the destination is one city: a region resolves to a single
-      // string too, and the old branch then asked what to visit *outside* an
-      // area the whole trip happens inside. One question covers both shapes.
-      {
-        key: 'nearbyAndTransport',
-        query: `For a ${tripDaysNum}-day trip in ${destinationStr}: which places should the itinerary actually include, how do you travel between them (trains, buses, cable cars, ferries, driving — with prices and journey times), and how many days does each deserve? If this is a single city, cover what is worth leaving it for as day trips or overnight stops. If it is a region or a route, cover how to move between its towns and valleys, and whether it works better as a base with day trips or as a point-to-point traverse. For each move, say what it actually costs in usable hours once you count getting to the station and waiting for the connection, and whether it is worth doing at all for a stay that short.${notesClause}${sourceClause('nearbyAndTransport')}`,
-      },
-
-      // Seasonal & practical information
-      {
-        key: 'seasonal',
-        query: `${destinationStr} travel in ${targetMonth || 'the travel season'}. Include weather, peak vs off-season pricing, festivals or events, crowd levels, and any seasonal closures.${notesClause}${sourceClause('seasonal')}`,
-      },
-
-      // Planning, booking windows, access rules, conditions and required skill.
-      // These are the details that decide whether a trip is possible at all,
-      // and none of the queries above ask about them.
-      {
-        key: 'planning',
-        query: `Practical planning for a ${tripDaysNum}-day trip in ${destinationStr}${targetMonth ? ` in ${targetMonth}` : ''}${tripNotes ? `, described by the traveler as: "${tripNotes}"` : ''}. Answer each of these specifically for ${currentYear}: (1) How far in advance do the places to stay need to be booked, and how is each one booked — online, by email, deposit required, cash only? (2) What permits, reservations, entry fees, timed-entry slots, or vehicle and access restrictions apply, and how are they obtained? (3) What conditions, closures, or seasonal limits affect this trip, and what is the usable window? (4) What fitness or skill level, equipment, and guiding does it require, and where locally can equipment be rented or a guide hired, at what price?${sourceClause('planning')}`,
-      },
-    ];
-
-    // Flight estimates (conditional)
-    if (!noFlight && departureCity) {
-      searchSpecs.push({
-        key: 'flights',
-        query: `Flights from ${departureCity} to ${destinationStr} in ${targetMonth || 'upcoming months'}. Which airports actually serve this destination — if it is a region rather than a city, name the realistic gateway airports and how far each is from it by road or rail. Include typical price ranges, best airlines, flight duration, and whether nonstop options exist.${sourceClause('flights')}`,
-      });
+    let research: Record<string, ResearchResult | undefined>;
+    let placesDining: CityDining[];
+    if (sharedReading && researchId) {
+      // The theme's own question runs while research-trip finishes the rest.
+      const ownPromise = runResearch({ ...researchArgs, specs: ownSpecs, includePlaces: false });
+      const shared = await timePhase("shared_research_wait", () =>
+        waitForTripResearch(() => lookupTripResearch(researchId)));
+      const own = await ownPromise;
+      if (shared) {
+        research = { ...shared.research, ...own.research };
+        placesDining = shared.placesDining;
+      } else {
+        // research-trip read the trip but never finished searching it. Keep
+        // its reading so this variant still plans the batch's destination,
+        // and run the rest of the searches here.
+        console.warn("[research] shared research unavailable — running the batch searches for this variant");
+        const rest = await runResearch({ ...researchArgs, specs: batchSpecs, includePlaces: true, staggerSlot: 1 });
+        research = { ...rest.research, ...own.research };
+        placesDining = rest.placesDining;
+      }
+    } else {
+      const all = await runResearch({ ...researchArgs, specs: searchSpecs, includePlaces: true });
+      research = all.research;
+      placesDining = all.placesDining;
     }
-
-    // Run the searches in parallel, but stagger the launches. Firing all six at
-    // the same instant is what tripped Perplexity's rate limit — five came back
-    // 429 in milliseconds, so the itinerary was built on one search out of six.
-    // The ramp has to be wide enough that the FIRST attempt lands. 180ms apart
-    // put all seven inside ~1.3s and everything 429'd; 700ms got every search
-    // through, but only by retrying — the phase went from 11.9s to 34.7s, and
-    // all of that was backoff. Retrying past a rate limit is far more expensive
-    // than simply not tripping it, so the ramp is wider than feels necessary.
-    // Watch for `[research] ... retrying` in the logs: none means this is right.
-    console.log(`Executing ${searchSpecs.length} Perplexity research queries...`);
-    // Places runs alongside the web research: it answers from a different
-    // corpus (the live Maps database) and shares no rate limit with
-    // Perplexity, so the two phases overlap instead of stacking.
-    const placesPromise = timePhase("places_dining", () =>
-      fetchDiningPlaces(resolvedCities, GOOGLE_PLACES_API_KEY, foodDrink ?? []));
-    const results = await timePhase("perplexity_research", () =>
-      Promise.all(searchSpecs.map(async (spec, i) => {
-        if (i > 0) await new Promise(r => setTimeout(r, i * 1500));
-        return searchWithPerplexity(spec.query, PERPLEXITY_API_KEY, spec.key).then(r => {
-          if (r.usage) costs.addPerplexity(`research_${spec.key}`, "sonar", r.usage);
-          return r;
-        });
-      })));
-    const { dining: placesDining, requests: placesRequests } = await placesPromise;
-    costs.addGooglePlaces("places_dining", placesRequests);
-    console.log("[research] places dining: " + JSON.stringify(
-      placesDining.map(d => ({
-        city: d.city,
-        ...Object.fromEntries(Object.entries(d.meals).map(([meal, ps]) => [meal, ps.length])),
-      }))));
-
-    type ResearchResult = { content: string; citations: string[] };
-    const research: Record<string, ResearchResult | undefined> = {};
-    searchSpecs.forEach((spec, i) => { research[spec.key] = results[i]; });
+    const researched = searchSpecs.map(spec => research[spec.key] ?? { content: "", citations: [] });
 
     // Every search failing returns empty content rather than throwing, so the
     // research block can assemble into nothing but section headers. Left
@@ -2182,7 +1539,7 @@ ${additionalNotes || "None provided"}
     // the research" alongside no research at all — contradictory instructions
     // that it can only resolve by inventing establishments and URLs, which is
     // the exact failure the rules were written to prevent.
-    const hasWebResearch = results.some(r => r.content.trim().length > 0);
+    const hasWebResearch = researched.some(r => r.content.trim().length > 0);
     const hasPlacesDining = placesDining.length > 0;
     // Places data is grounding too: even with every web search empty, a dining
     // list straight from the Maps database is real research to hold the model
@@ -2195,10 +1552,10 @@ ${additionalNotes || "None provided"}
     console.log("[research] " + JSON.stringify(
       Object.fromEntries(searchSpecs.map((spec, i) => [
         spec.key,
-        { chars: results[i].content.trim().length, citations: results[i].citations?.length ?? 0 },
+        { chars: researched[i].content.trim().length, citations: researched[i].citations?.length ?? 0 },
       ])),
     ));
-    console.log(`Perplexity research completed. grounded=${hasGroundedResearch} (web=${hasWebResearch} places=${hasPlacesDining})`);
+    console.log(`Perplexity research completed. grounded=${hasGroundedResearch} (web=${hasWebResearch} places=${hasPlacesDining}) shared=${!!sharedReading}`);
     if (!hasWebResearch) {
       console.error("All Perplexity searches returned empty" +
         (hasPlacesDining ? " — grounding on Places dining data only." : " — generating without grounding."));
