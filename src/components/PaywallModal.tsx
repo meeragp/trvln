@@ -22,7 +22,7 @@ export function PaywallModal({ open, onOpenChange, onPurchase, loadingPack }: Pa
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="text-center">
-          <DialogTitle className="text-2xl font-display bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
+          <DialogTitle className="text-2xl font-display font-normal text-foreground">
             Where to next?
           </DialogTitle>
           <DialogDescription>
@@ -35,8 +35,8 @@ export function PaywallModal({ open, onOpenChange, onPurchase, loadingPack }: Pa
             <div
               key={pack}
               className={cn(
-                "relative flex flex-col items-center gap-1 rounded-2xl border p-5 pt-6 shadow-medium bg-card",
-                best ? "border-primary" : "border-border",
+                "relative flex flex-col items-center gap-1 rounded-2xl border p-5 pt-6 bg-card",
+                best ? "border-foreground" : "border-border",
               )}
             >
               {best && (
@@ -45,7 +45,7 @@ export function PaywallModal({ open, onOpenChange, onPurchase, loadingPack }: Pa
                   Best value
                 </span>
               )}
-              <span className="text-3xl font-display font-bold text-foreground">{price}</span>
+              <span className="text-3xl font-display text-foreground">{price}</span>
               <span className="text-sm font-semibold text-foreground">{trips}</span>
               <span className="text-xs text-muted-foreground mb-3">{perTrip}</span>
               <Button

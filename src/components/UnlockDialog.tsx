@@ -22,7 +22,7 @@ export function UnlockDialog({ open, onOpenChange, onUnlock, loading }: UnlockDi
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader className="text-center">
-          <DialogTitle className="text-xl font-display bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
+          <DialogTitle className="text-xl font-display font-normal text-foreground">
             Unlock your full trip
           </DialogTitle>
           <DialogDescription>

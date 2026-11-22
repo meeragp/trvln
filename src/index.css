@@ -29,8 +29,15 @@
     --accent: 38 55% 92%;
     --accent-foreground: 24 14% 15%;
 
-    --destructive: 0 72% 50%;
-    --destructive-foreground: 0 85% 97%;
+    /* Status colours, tuned to the warm palette. Each has a soft tint for
+       backgrounds; the strong value is text-safe on paper and on its tint. */
+    --destructive: 6 62% 42%;
+    --destructive-foreground: 0 0% 100%;
+    --destructive-soft: 8 70% 94%;
+    --success: 140 34% 28%;
+    --success-soft: 105 30% 91%;
+    --warning: 30 78% 28%;
+    --warning-soft: 42 88% 90%;
 
     --border: 34 20% 82%;
     --input: 30 9% 54%;
@@ -41,15 +48,6 @@
     /* Marks what the app filled in for you from your photos and videos */
     --marigold: 41 90% 60%;
 
-    /* Custom tokens - Blue & Cream palette */
-    --cobalt: 224 55% 40%;
-    --cobalt-light: 224 50% 55%;
-    --cobalt-dark: 224 60% 30%;
-    --cream: 40 30% 96%;
-    --cream-dark: 40 25% 90%;
-    --warm-white: 40 40% 98%;
-    --mahogany: 15 45% 25%;
-    --mahogany-light: 15 35% 40%;
 
     /* Gradients */
     /* The page ground is flat paper now. These stay as variables because
@@ -126,14 +124,6 @@
     --input: 215 19% 34%;
     --ring: 198 93% 59%;
 
-    --cobalt: 224 55% 55%;
-    --cobalt-light: 224 50% 65%;
-    --cobalt-dark: 224 60% 40%;
-    --cream: 40 20% 15%;
-    --cream-dark: 40 15% 12%;
-    --warm-white: 40 15% 18%;
-    --mahogany: 15 35% 35%;
-    --mahogany-light: 15 30% 50%;
 
     --gradient-hero: linear-gradient(135deg, hsl(224 55% 55% / 0.15) 0%, hsl(224 40% 12%) 50%, hsl(224 55% 55% / 0.08) 100%);
     --gradient-card: linear-gradient(180deg, hsl(224 35% 16%) 0%, hsl(224 30% 14%) 100%);
@@ -179,7 +169,9 @@
     @apply bg-background text-foreground font-body antialiased;
   }
 
-  h1, h2, h3, h4, h5, h6 {
+  /* The serif is for big moments. Small headings (h4 and below) stay in
+     Geist, where a 16px serif reads as weak rather than elegant. */
+  h1, h2, h3 {
     @apply font-display;
   }
 

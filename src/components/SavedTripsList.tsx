@@ -44,7 +44,7 @@ export function SavedTripsList({ onBack, onOpen }: SavedTripsListProps) {
   };
 
   return (
-    <div className="min-h-screen gradient-hero">
+    <div className="min-h-screen bg-background">
       {/* Nav */}
       <div className="sticky top-0 z-30 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="container max-w-4xl mx-auto flex items-center justify-between px-4 py-3">
@@ -57,7 +57,7 @@ export function SavedTripsList({ onBack, onOpen }: SavedTripsListProps) {
           </button>
           <div className="flex items-center gap-2">
             <img src="/favicon.svg" alt="Travellin'" className="w-5 h-5" />
-            <span className="font-display text-sm text-primary">Travellin'</span>
+            <span className="font-display text-lg leading-none">Travellin'</span>
           </div>
           <div className="w-16" />
         </div>
@@ -66,7 +66,7 @@ export function SavedTripsList({ onBack, onOpen }: SavedTripsListProps) {
       <main className="container pb-20">
         <div className="max-w-4xl mx-auto pt-8 space-y-6">
           <div>
-            <h1 className="text-2xl font-display font-bold text-foreground">Saved trips</h1>
+            <h1 className="font-display text-5xl leading-none text-foreground md:text-6xl">Saved trips</h1>
             {!loading && (
               <p className="text-sm text-muted-foreground mt-1">
                 {trips.length === 0 ? "No saved trips yet" : `${trips.length} trip${trips.length !== 1 ? "s" : ""}`}
@@ -91,10 +91,10 @@ export function SavedTripsList({ onBack, onOpen }: SavedTripsListProps) {
                   <button
                     key={trip.id}
                     onClick={() => onOpen(trip.variants, trip.preferences, trip.id)}
-                    className="w-full text-left bg-card rounded-2xl border border-border/60 p-5 hover:bg-muted/10 transition-colors group relative"
+                    className="w-full text-left bg-card rounded-2xl border border-border p-5 hover:border-foreground transition-colors group relative"
                   >
                     <div className="pr-10">
-                      <p className="font-semibold text-foreground leading-snug">{trip.title}</p>
+                      <p className="font-display text-2xl text-foreground leading-snug">{trip.title}</p>
                       <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-1">{subtitle}</p>
                       <p className="text-xs text-muted-foreground/50 mt-2">
                         {formatDistanceToNow(new Date(trip.created_at), { addSuffix: true })}
@@ -104,7 +104,7 @@ export function SavedTripsList({ onBack, onOpen }: SavedTripsListProps) {
                     <button
                       onClick={(e) => handleDelete(trip.id, e)}
                       disabled={deleting === trip.id}
-                      className="absolute right-4 top-4 p-1.5 rounded-lg text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-red-500 hover:bg-red-50 transition-all"
+                      className="absolute right-3 top-3 p-2.5 rounded-lg text-muted-foreground md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 hover:text-destructive hover:bg-destructive-soft transition-all"
                     >
                       {deleting === trip.id ? (
                         <Loader2 className="w-4 h-4 animate-spin" />

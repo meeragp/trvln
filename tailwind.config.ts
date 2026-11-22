@@ -71,7 +71,16 @@ export default {
   			},
   			destructive: {
   				DEFAULT: 'hsl(var(--destructive))',
-  				foreground: 'hsl(var(--destructive-foreground))'
+  				foreground: 'hsl(var(--destructive-foreground))',
+  				soft: 'hsl(var(--destructive-soft))'
+  			},
+  			success: {
+  				DEFAULT: 'hsl(var(--success))',
+  				soft: 'hsl(var(--success-soft))'
+  			},
+  			warning: {
+  				DEFAULT: 'hsl(var(--warning))',
+  				soft: 'hsl(var(--warning-soft))'
   			},
   			muted: {
   				DEFAULT: 'hsl(var(--muted))',
@@ -89,21 +98,7 @@ export default {
   				DEFAULT: 'hsl(var(--card))',
   				foreground: 'hsl(var(--card-foreground))'
   			},
-  			cobalt: {
-  				DEFAULT: 'hsl(var(--cobalt))',
-  				light: 'hsl(var(--cobalt-light))',
-  				dark: 'hsl(var(--cobalt-dark))'
-  			},
-  			cream: {
-  				DEFAULT: 'hsl(var(--cream))',
-  				dark: 'hsl(var(--cream-dark))'
-  			},
-  			'warm-white': 'hsl(var(--warm-white))',
   			marigold: 'hsl(var(--marigold))',
-  			mahogany: {
-  				DEFAULT: 'hsl(var(--mahogany))',
-  				light: 'hsl(var(--mahogany-light))'
-  			},
   			sidebar: {
   				DEFAULT: 'hsl(var(--sidebar-background))',
   				foreground: 'hsl(var(--sidebar-foreground))',

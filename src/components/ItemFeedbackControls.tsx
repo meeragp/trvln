@@ -70,7 +70,7 @@ export function ItemFeedbackControls({
         size="sm"
         className={cn(
           "h-7 w-7 p-0 rounded-full",
-          item.vote === 'up' && "bg-emerald-500/20 text-emerald-600"
+          item.vote === 'up' && "bg-success-soft text-success"
         )}
         onClick={(e) => handleVote('up', e)}
         title="Keep this"
@@ -83,7 +83,7 @@ export function ItemFeedbackControls({
         size="sm"
         className={cn(
           "h-7 w-7 p-0 rounded-full",
-          item.vote === 'down' && "bg-red-500/20 text-red-600"
+          item.vote === 'down' && "bg-destructive-soft text-destructive"
         )}
         onClick={(e) => handleVote('down', e)}
         title="Replace this"
@@ -96,7 +96,7 @@ export function ItemFeedbackControls({
         size="sm"
         className={cn(
           "h-7 w-7 p-0 rounded-full",
-          item.vote === 'neutral' && "bg-amber-500/20 text-amber-600"
+          item.vote === 'neutral' && "bg-warning-soft text-warning"
         )}
         onClick={(e) => handleVote('neutral', e)}
         title="Indifferent"
@@ -112,7 +112,7 @@ export function ItemFeedbackControls({
             size="sm"
             className={cn(
               "h-7 w-7 p-0 rounded-full",
-              item.comment && "bg-blue-500/20 text-blue-600"
+              item.comment && "bg-primary/10 text-primary"
             )}
             title="Add note"
           >

@@ -1292,7 +1292,7 @@ const Index = () => {
         </button>
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="Travellin'" className="w-5 h-5" />
-          <span className="font-display text-sm text-primary">Travellin'</span>
+          <span className="font-display text-lg leading-none">Travellin'</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1325,7 +1325,7 @@ const Index = () => {
   // ── Results screen ─────────────────────────────────────────────────────────
   if (view === 'results') {
     return (
-      <div className="min-h-screen gradient-hero">
+      <div className="min-h-screen bg-background">
         <ResultsNav />
         <main className="container pb-20">
           <div className="max-w-4xl mx-auto pt-6 space-y-6">
@@ -1376,12 +1376,17 @@ const Index = () => {
             {(itineraries.length > 0 || isGenerating) && (
               <div className="bg-card rounded-2xl shadow-medium">
                 <div className="sticky top-[57px] z-20 bg-card/95 backdrop-blur-sm px-6 py-5 md:px-8 rounded-t-2xl">
-                  <h2 className="font-display text-xl font-bold text-foreground leading-tight">
-                    {currentItinerary ? `${currentItinerary.emoji} ${currentItinerary.name}` : "Your Personalized Itinerary"}
+                  <h2 className="font-display text-xl text-foreground leading-tight">
+                    {currentItinerary
+                      ? `${currentItinerary.emoji} ${currentItinerary.name}`
+                      : preferences.cities[0] ? `Your ${preferences.cities[0].split(',')[0]} trip` : "Your trip"}
                   </h2>
-                  <p className="text-sm text-muted-foreground mt-1 leading-snug">
-                    {currentItinerary?.structuredData?.summary?.vibeSummary || currentItinerary?.tagline || "Crafted based on your preferences"}
-                  </p>
+                  {/* Before themes exist there is nothing true to say here yet */}
+                  {(currentItinerary?.structuredData?.summary?.vibeSummary || currentItinerary?.tagline) && (
+                    <p className="text-sm text-muted-foreground mt-1 leading-snug">
+                      {currentItinerary?.structuredData?.summary?.vibeSummary || currentItinerary?.tagline}
+                    </p>
+                  )}
                 </div>
                 <div className="p-6 md:p-8">
                   <ItineraryOutput
