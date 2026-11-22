@@ -1,10 +1,5 @@
-import { useState, useRef } from "react";
-import {
-  Sparkles, Camera, MapPin, Calendar, Clock, Wallet, Plane,
-  Building, Trees, Tent, Heart, Users, Zap,
-  Utensils, PartyPopper, Globe, GraduationCap, Landmark, Mountain,
-  Plus, Check, Link as LinkIcon, Loader2
-} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowRight, Link as LinkIcon, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -16,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { MediaDropZone, MediaItem, MediaDropZoneHandle } from "./MediaDropZone";
 import { AirportSelector } from "./AirportSelector";
 import { cn } from "@/lib/utils";
+import { countInferred, type DestinationHints, type InferredVibe } from "@/lib/inspirationInsights";
 import { format, differenceInDays } from "date-fns";
 import type { DateRange } from "react-day-picker";
 
@@ -39,6 +35,8 @@ export interface TripPreferences {
   flightDirectness: 'nonstop' | 'short-layover' | 'long-layover';
 
   // Vibe
+  // Who is going. Optional: trips saved before this question existed lack it.
+  travelers?: '' | 'solo' | 'couple' | 'friends' | 'family';
   atmosphere: string[];
   adventureLevel: string;
   guidedPreference: 'fully-guided' | 'some-guided' | 'self-guided';
@@ -56,13 +54,28 @@ interface TripInputFormProps {
   isGenerating: boolean;
   onFramesReady?: (frameUrls: string[]) => void;
   isIdentifyingLocations?: boolean;
+  /** What the analysis read from the traveler's media, used to mark the
+   *  Vibe options it pre-filled. */
+  inferredVibe?: InferredVibe | null;
+  /** When-to-go and what-your-budget-gets hints for the chosen places. */
+  destinationHints?: DestinationHints | null;
+  /** Tells the page which step is showing, so it can drop the big hero once
+   *  the traveler is past the first one. */
+  onStepChange?: (step: number) => void;
 }
 
+const travelerOptions = [
+  { id: 'solo', label: 'Solo' },
+  { id: 'couple', label: 'Couple' },
+  { id: 'friends', label: 'Friends' },
+  { id: 'family', label: 'Family with kids' },
+] as const;
+
 const atmosphereOptions = [
-  { id: 'city', label: 'City', icon: Building },
-  { id: 'nature', label: 'Nature', icon: Trees },
-  { id: 'off-beaten-path', label: 'Off the beaten path', icon: MapPin },
-  { id: 'backcountry', label: 'Backcountry', icon: Tent },
+  { id: 'city', label: 'City' },
+  { id: 'nature', label: 'Nature' },
+  { id: 'off-beaten-path', label: 'Off the beaten path' },
+  { id: 'backcountry', label: 'Backcountry' },
 ];
 
 const adventureOptions = [
@@ -79,28 +92,28 @@ const guidedOptions = [
 ];
 
 const foodDrinkOptions = [
-  { id: 'local', label: 'Local bites', icon: Utensils },
-  { id: 'casual', label: 'Casual & safe', icon: Utensils },
-  { id: 'romantic', label: 'Romantic', icon: Heart },
-  { id: 'family', label: 'Family-friendly', icon: Users },
-  { id: 'party', label: 'Party & nightlife', icon: PartyPopper },
+  { id: 'local', label: 'Local bites' },
+  { id: 'casual', label: 'Casual & safe' },
+  { id: 'romantic', label: 'Romantic' },
+  { id: 'family', label: 'Family-friendly' },
+  { id: 'party', label: 'Party & nightlife' },
 ];
 
 const interestOptions = [
-  { id: 'educational', label: 'Educational', icon: GraduationCap },
-  { id: 'culture', label: 'Culture', icon: Landmark },
-  { id: 'food', label: 'Food & drink', icon: Utensils },
-  { id: 'instagram', label: "For the 'gram", icon: Camera },
-  { id: 'activities', label: 'Adventures', icon: Mountain },
-  { id: 'nature', label: 'Nature', icon: Trees },
+  { id: 'educational', label: 'Educational' },
+  { id: 'culture', label: 'Culture' },
+  { id: 'food', label: 'Food & drink' },
+  { id: 'instagram', label: "For the 'gram" },
+  { id: 'activities', label: 'Adventures' },
+  { id: 'nature', label: 'Nature' },
 ];
 
 const budgetLabels = [
-  { min: 0, max: 25, label: "Budget", range: "$0 - $50" },
-  { min: 25, max: 50, label: "Moderate", range: "$50 - $100" },
-  { min: 50, max: 75, label: "Comfortable", range: "$100 - $200" },
-  { min: 75, max: 100, label: "Luxury", range: "$200+" },
-];
+  { min: 0, max: 25, key: 'budget', label: "Budget", range: "$0 - $50" },
+  { min: 25, max: 50, key: 'moderate', label: "Moderate", range: "$50 - $100" },
+  { min: 50, max: 75, key: 'comfortable', label: "Comfortable", range: "$100 - $200" },
+  { min: 75, max: 100, key: 'luxury', label: "Luxury", range: "$200+" },
+] as const;
 
 const flightBudgetLabels = [
   { min: 0, max: 25, label: "Budget", range: "$100 - $300" },
@@ -109,64 +122,136 @@ const flightBudgetLabels = [
   { min: 75, max: 100, label: "Premium", range: "$1000+" },
 ];
 
-const suggestionChips = [
-  "A relaxed week somewhere warm",
-  "Hidden gems in Japan",
-  "Romantic coastal Europe",
-  "Off-grid nature, big hikes",
+// Starting points for someone who knows the feeling they want but not the
+// place. Each one carries a constraint, so the planner has something to work
+// with even if the traveler adds nothing else.
+const wishPrompts = [
+  "Somewhere warm in February, under 6 hours away",
+  "A long weekend that feels like a real trip",
+  "First time in Japan, beyond Tokyo",
+  "Mountains, a lake and nowhere to be",
+  "A food city I can explore on foot",
+  "Surprise me: one week, $1,500 all in",
 ];
 
-const stepIcons = [Camera, Plane, Heart];
 const stepLabels = ["Inspiration", "Logistics", "Vibe"];
 
-export function TripInputForm({ preferences, onPreferencesChange, onGenerate, isGenerating, onFramesReady, isIdentifyingLocations }: TripInputFormProps) {
-  const [currentStep, setCurrentStep] = useState(0);
+// The departure airport rarely changes between trips, so the form remembers it
+const LAST_DEPARTURE_KEY = 'trvln:lastDeparture';
+
+const readLastDeparture = (): string => {
+  try { return localStorage.getItem(LAST_DEPARTURE_KEY) ?? ''; } catch { return ''; }
+};
+
+const bandFor = <T extends { min: number; max: number }>(value: number, bands: readonly T[]): T =>
+  bands.find(b => value >= b.min && value <= b.max) ?? bands[bands.length - 1];
+
+const optionClass = (isSelected: boolean) => cn(
+  "min-h-11 rounded-xl border px-4 py-2 text-[15px] text-left inline-flex items-center gap-2.5 transition-colors",
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+  isSelected
+    ? "border-foreground bg-foreground text-background font-medium"
+    : "border-input bg-transparent text-foreground hover:border-foreground"
+);
+
+/** One choice in a group. `inferred` marks a selection the app made from the
+ *  traveler's media, so they can tell its guesses from their own picks. */
+function Option({ isSelected, onClick, inferred, children }: {
+  isSelected: boolean;
+  onClick: () => void;
+  inferred?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button type="button" aria-pressed={isSelected} onClick={onClick} className={optionClass(isSelected)}>
+      {children}
+      {isSelected && inferred && (
+        <span role="img" aria-label="From your photos and videos" className="h-2 w-2 shrink-0 bg-marigold" />
+      )}
+    </button>
+  );
+}
+
+/** A labelled row of the form: label on the left, controls on the right,
+ *  stacking on a narrow screen. */
+function Row({ label, hint, htmlFor, children }: {
+  label: string;
+  hint?: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
+  const LabelTag = htmlFor ? 'label' : 'h3';
+  return (
+    <div className="flex flex-col gap-3 border-t border-border py-5 sm:flex-row sm:gap-6">
+      <div className="sm:w-36 sm:shrink-0 sm:pt-2.5">
+        <LabelTag {...(htmlFor ? { htmlFor } : {})} className="block font-body text-sm font-medium tracking-normal text-foreground">
+          {label}
+        </LabelTag>
+        {hint && <p className="mt-0.5 text-[13px] text-muted-foreground">{hint}</p>}
+      </div>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+export function TripInputForm({
+  preferences, onPreferencesChange, onGenerate, isGenerating, onFramesReady,
+  isIdentifyingLocations, inferredVibe, destinationHints, onStepChange,
+}: TripInputFormProps) {
+  const [currentStep, setStep] = useState(0);
+  const setCurrentStep = (step: number) => {
+    setStep(step);
+    onStepChange?.(step);
+    window.scrollTo({ top: 0 });
+  };
   const [isDragging, setIsDragging] = useState(false);
   const [newCity, setNewCity] = useState("");
+  // True while the departure airport on screen is the remembered one, not one
+  // the traveler picked for this trip
+  const [departureRemembered, setDepartureRemembered] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
   const mediaRef = useRef<MediaDropZoneHandle>(null);
 
   const updatePreferences = (updates: Partial<TripPreferences>) => {
     onPreferencesChange({ ...preferences, ...updates });
   };
 
-  const addCity = () => {
-    if (newCity.trim() && !preferences.cities.includes(newCity.trim())) {
-      updatePreferences({ cities: [...preferences.cities, newCity.trim()] });
-      setNewCity("");
+  // Pre-fill the departure airport from the last trip, once, if none is set
+  useEffect(() => {
+    if (preferences.departureCity) return;
+    const last = readLastDeparture();
+    if (last) {
+      onPreferencesChange({ ...preferences, departureCity: last });
+      setDepartureRemembered(true);
     }
+    // Mount only: this must not re-fill the field after the traveler clears it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setDeparture = (value: string) => {
+    setDepartureRemembered(false);
+    try {
+      if (value) localStorage.setItem(LAST_DEPARTURE_KEY, value);
+    } catch { /* storage unavailable: the field still works, it just isn't remembered */ }
+    updatePreferences({ departureCity: value });
+  };
+
+  const addCity = () => {
+    const city = newCity.trim();
+    if (city && !preferences.cities.some(c => c.toLowerCase() === city.toLowerCase())) {
+      updatePreferences({ cities: [...preferences.cities, city] });
+    }
+    setNewCity("");
   };
 
   const removeCity = (city: string) => {
     updatePreferences({ cities: preferences.cities.filter(c => c !== city) });
   };
 
-  const handleGenerate = () => {
-    onGenerate(undefined);
-  };
-
   const toggleArrayItem = (field: 'atmosphere' | 'foodDrink' | 'interests', item: string) => {
     const current = preferences[field];
-    if (current.includes(item)) {
-      updatePreferences({ [field]: current.filter(i => i !== item) });
-    } else {
-      updatePreferences({ [field]: [...current, item] });
-    }
-  };
-
-  const getBudgetLabel = (value: number, labels: typeof budgetLabels) => {
-    const label = labels.find(l => value >= l.min && value <= l.max) || labels[labels.length - 1];
-    return label;
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
+    updatePreferences({ [field]: current.includes(item) ? current.filter(i => i !== item) : [...current, item] });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -186,321 +271,296 @@ export function TripInputForm({ preferences, onPreferencesChange, onGenerate, is
     }
   };
 
-  // Step indicator
-  const StepIndicator = () => (
-    <div className="px-6 pt-5 pb-4">
-      {/* Progress bar */}
-      <div className="flex gap-1.5 mb-4">
-        {[0, 1, 2].map(i => (
-          <div
-            key={i}
-            className={cn(
-              "h-[3px] flex-1 rounded-full transition-colors duration-300",
-              i <= currentStep ? "bg-primary" : "bg-muted"
-            )}
-          />
-        ))}
-      </div>
-      {/* Step labels */}
-      <div className="grid grid-cols-3 gap-1.5">
-        {stepLabels.map((label, i) => {
-          const Icon = stepIcons[i];
-          const isActive = i === currentStep;
-          const isDone = i < currentStep;
-          return (
-            <button
-              key={i}
-              type="button"
-              onClick={() => i < currentStep && setCurrentStep(i)}
-              className={cn(
-                "flex items-center gap-2 text-sm transition-colors justify-start",
-                isActive ? "text-foreground font-semibold" : isDone ? "text-primary cursor-pointer" : "text-muted-foreground"
-              )}
-            >
-              <span className={cn(
-                "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0",
-                isActive ? "bg-foreground text-background" : isDone ? "bg-primary text-primary-foreground" : "border-2 border-muted-foreground/30 text-muted-foreground"
-              )}>
-                {isDone ? <Check className="w-3 h-3" /> : i + 1}
-              </span>
-              <Icon className="w-3.5 h-3.5" />
-              {label}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-
-  // Compact media card for step 0
-  const CompactMediaCard = ({ item, index }: { item: MediaItem; index: number }) => {
-    const isImage = item.type === 'image' && item.preview;
-    const rawLabel = item.file?.name || (item.url ? item.url.replace(/^https?:\/\//, '') : 'Media');
-    const label = rawLabel.length > 10 ? rawLabel.slice(0, 10) + '…' : rawLabel;
-    return (
-      <div className="relative w-[90px] flex-shrink-0 rounded-2xl border border-primary/20 bg-primary/10 flex flex-col items-center justify-center pt-5 pb-2.5 px-2 gap-2.5">
-        {/* Icon or thumbnail */}
-        {item.uploading ? (
-          <Loader2 className="w-8 h-8 animate-spin text-primary/60" />
-        ) : isImage ? (
-          <img src={item.preview} alt="" className="w-10 h-10 rounded-lg object-cover" />
-        ) : (
-          <LinkIcon className="w-8 h-8 text-primary/70" />
-        )}
-        {/* Label */}
-        <span className="text-[11px] font-semibold text-foreground/80 bg-background rounded-md px-2 py-1 truncate max-w-full">
-          {label}
-        </span>
-        {/* Remove button */}
-        <button
-          type="button"
-          onClick={() => updatePreferences({ media: preferences.media.filter((_, j) => j !== index) })}
-          className="absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded-full bg-foreground text-background text-xs font-bold leading-none hover:bg-foreground/80"
-        >
-          ×
-        </button>
-      </div>
-    );
+  const applyWish = (wish: string) => {
+    updatePreferences({ additionalNotes: wish });
+    notesRef.current?.focus();
   };
 
-  // Radio button row item
-  const RadioOption = ({
-    isSelected,
-    onClick,
-    children,
-  }: {
-    isSelected: boolean;
-    onClick: () => void;
-    children: React.ReactNode;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "border rounded-full px-3 py-1.5 text-[13px] flex items-center gap-1.5 transition-colors",
-        isSelected
-          ? "border-primary bg-primary/5"
-          : "border-border hover:bg-muted/40"
-      )}
-    >
-      <span className={cn(
-        "w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center shrink-0",
-        isSelected ? "border-primary" : "border-muted-foreground/30"
-      )}>
-        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
-      </span>
-      {children}
-    </button>
+  const stayBand = bandFor(preferences.budgetAccommodation, budgetLabels);
+  const flightBand = bandFor(preferences.budgetFlight, flightBudgetLabels);
+  const hasMedia = preferences.media.length > 0;
+  const placeCount = preferences.cities.length;
+  const inferredCount = countInferred(preferences, inferredVibe ?? null);
+
+  // The suggested travel windows are stored as the target month, so they need
+  // no fields of their own and reach the planner like a month typed by hand
+  const hintWindows = [
+    destinationHints?.bestTime && { ...destinationHints.bestTime, tag: 'Suggested' },
+    destinationHints?.valueTime && { ...destinationHints.valueTime, tag: 'Quieter, better value' },
+  ].filter((w): w is { label: string; why: string; tag: string } => !!w);
+  const onHintWindow = preferences.dateFlexibility === 'month'
+    && hintWindows.some(w => w.label === preferences.targetMonth);
+
+  const renderStepper = () => (
+    <ol className="flex flex-wrap gap-x-6 gap-y-1 border-b border-foreground pb-3 text-sm">
+      {stepLabels.map((label, i) => {
+        const isActive = i === currentStep;
+        const isDone = i < currentStep;
+        return (
+          <li key={label}>
+            <button
+              type="button"
+              disabled={!isDone}
+              aria-current={isActive ? 'step' : undefined}
+              onClick={() => setCurrentStep(i)}
+              className={cn(
+                "min-h-11 border-b-2 border-transparent",
+                isActive && "border-foreground font-medium text-foreground",
+                isDone && "text-primary underline-offset-4 hover:underline",
+                !isActive && !isDone && "text-muted-foreground",
+              )}
+            >
+              <span className="tabular-nums">{`0${i + 1}`}</span> {label}
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 
-  // Toggle button for multi-select
-  const ToggleOption = ({
-    isSelected,
-    onClick,
-    icon: Icon,
-    label,
-    compact,
-  }: {
-    isSelected: boolean;
-    onClick: () => void;
-    icon?: React.ElementType;
-    label: string;
-    compact?: boolean;
-  }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "border rounded-full flex items-center transition-colors whitespace-nowrap",
-        compact ? "px-3 py-1.5 text-[13px] gap-1.5" : "px-4 py-2 text-sm gap-2",
-        isSelected
-          ? "border-primary bg-primary/5"
-          : "border-border hover:bg-muted/40"
+  const renderMediaThumb = (item: MediaItem, index: number) => (
+    <li key={index} className="relative h-36 w-24 shrink-0 overflow-hidden rounded-xl bg-muted sm:h-40 sm:w-28">
+      {item.type === 'video' && item.file && item.preview ? (
+        <video src={item.preview} muted playsInline className="h-full w-full object-cover" />
+      ) : item.preview ? (
+        <img src={item.preview} alt="" className="h-full w-full object-cover" />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+          <LinkIcon className="h-5 w-5" />
+        </div>
       )}
-    >
-      {Icon && <Icon className={cn("shrink-0", compact ? "w-3.5 h-3.5" : "w-4 h-4")} />}
-      {label}
-      {isSelected && <Check className={cn("ml-0.5", compact ? "w-3 h-3" : "w-3 h-3 ml-1")} />}
-    </button>
+      {item.uploading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      <button
+        type="button"
+        aria-label={`Remove ${item.type === 'video' ? 'video' : 'photo'} ${index + 1}`}
+        onClick={() => updatePreferences({ media: preferences.media.filter((_, j) => j !== index) })}
+        className="absolute right-0 top-0 flex h-11 w-11 items-start justify-end p-1.5"
+      >
+        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-background">
+          <X className="h-3.5 w-3.5" />
+        </span>
+      </button>
+    </li>
   );
 
   const renderStep0 = () => (
-    <div
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className={cn(isDragging && "bg-primary/5 transition-colors")}
-    >
-      {/* Media cards */}
-      {preferences.media.length > 0 && (
-        <div className="px-6 pt-2 pb-3 flex flex-wrap gap-2">
-          {preferences.media.map((item, i) => (
-            <CompactMediaCard key={i} item={item} index={i} />
-          ))}
-        </div>
-      )}
-
-      {/* Textarea */}
-      <textarea
-        value={preferences.additionalNotes}
-        onChange={(e) => updatePreferences({ additionalNotes: e.target.value })}
-        onPaste={handlePaste}
-        placeholder="Describe your dream trip, paste TikTok / Reel / listing links, or drop in a screenshot..."
-        className="w-full h-[120px] px-6 py-4 bg-transparent text-base text-foreground placeholder:text-muted-foreground/60 resize-none focus:outline-none"
-      />
-
-      {/* City pills */}
-      {(preferences.cities.length > 0 || isIdentifyingLocations) && (
-        <div className="px-6 pb-3 flex flex-wrap gap-2 items-center">
-          {isIdentifyingLocations && (
-            <span className="flex items-center gap-1.5 text-xs text-primary">
-              <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-              </svg>
-              Identifying locations…
-            </span>
+    <div className="grid gap-x-16 gap-y-10 pt-8 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+      <section
+        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+        onDragLeave={(e) => { e.preventDefault(); setIsDragging(false); }}
+        onDrop={handleDrop}
+        className="flex min-w-0 flex-col gap-4"
+      >
+        <label htmlFor="trip-inspiration" className="text-[15px] font-semibold">Show us what caught your eye</label>
+        <textarea
+          id="trip-inspiration"
+          ref={notesRef}
+          value={preferences.additionalNotes}
+          onChange={(e) => updatePreferences({ additionalNotes: e.target.value })}
+          onPaste={handlePaste}
+          rows={3}
+          placeholder="Paste a TikTok or Reel you saved, drop in a screenshot, or just describe the trip you keep daydreaming about…"
+          className={cn(
+            "w-full resize-y rounded-2xl border-[1.5px] border-foreground bg-card px-5 py-4 text-lg leading-relaxed text-foreground",
+            "placeholder:text-muted-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+            isDragging && "border-primary bg-accent",
           )}
-          {preferences.cities.map((city) => (
-            <span key={city} className="flex items-center gap-1.5 bg-primary/10 text-primary text-[12px] rounded-full px-3 py-1.5 font-medium">
-              <MapPin className="w-3.5 h-3.5 shrink-0" />
-              {city}
-              <button type="button" onClick={() => removeCity(city)} className="ml-1 opacity-60 hover:opacity-100">×</button>
-            </span>
-          ))}
+        />
+
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="min-h-11 text-[15px] underline underline-offset-4 hover:text-primary"
+          >
+            Attach a video or screenshot
+          </button>
+          <Button type="button" className="h-[52px] rounded-xl px-6 text-base font-semibold" onClick={() => setCurrentStep(1)}>
+            Continue <ArrowRight aria-hidden="true" />
+          </Button>
         </div>
-      )}
 
-      {/* Separator */}
-      <div className="border-t border-border mx-5" />
+        {/* What we found in their media: the thumbnails are their own frames */}
+        {(hasMedia || placeCount > 0 || isIdentifyingLocations) && (
+          <div className="mt-2 flex flex-col gap-5">
+            {hasMedia && (
+              <ul className="flex gap-3 overflow-x-auto pb-1">
+                {preferences.media.map(renderMediaThumb)}
+              </ul>
+            )}
 
-      {/* Bottom action row */}
-      <div className="flex items-center justify-between px-5 py-3">
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="flex items-center gap-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <span className="w-9 h-9 rounded-full border border-border flex items-center justify-center shrink-0">
-            <LinkIcon className="w-4 h-4" />
-          </span>
-          Attach or drop media
-        </button>
-        <Button
-          type="button"
-          variant="default"
-          size="default"
-          className="rounded-xl px-6 font-semibold"
-          onClick={() => setCurrentStep(1)}
-        >
-          Continue ›
-        </Button>
-      </div>
+            <div>
+              <h3 className="font-display text-3xl leading-tight" aria-live="polite">
+                {isIdentifyingLocations
+                  ? "Looking for places in your video…"
+                  : placeCount === 0
+                    ? "No places yet"
+                    : hasMedia
+                      ? `We spotted ${placeCount} place${placeCount === 1 ? '' : 's'}`
+                      : `${placeCount} place${placeCount === 1 ? '' : 's'} on your list`}
+              </h3>
+              {inferredVibe?.summary && (
+                <p className="mt-1 text-[15px] text-muted-foreground">Reads as {inferredVibe.summary}.</p>
+              )}
 
-      {/* Hidden inputs */}
-      <MediaDropZone
-        ref={mediaRef}
-        compact
-        media={preferences.media}
-        onMediaChange={(media) => updatePreferences({ media })}
-        onFramesReady={onFramesReady}
-      />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*,video/*"
-        multiple
-        className="sr-only"
-        onChange={(e) => {
-          const files = Array.from(e.target.files || []).filter(f =>
-            f.type.startsWith('image/') || f.type.startsWith('video/')
-          );
-          if (files.length > 0) mediaRef.current?.processFiles(files);
-          e.target.value = '';
-        }}
-      />
+              {placeCount > 0 && (
+                <ul className="mt-3 border-b border-border">
+                  {preferences.cities.map((city) => (
+                    <li key={city} className="flex items-center justify-between gap-4 border-t border-border py-1.5">
+                      <span className="min-w-0 font-display text-2xl leading-snug">{city}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeCity(city)}
+                        aria-label={`Remove ${city}`}
+                        className="min-h-11 shrink-0 text-sm underline underline-offset-4 hover:text-primary"
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <div className="mt-3 flex gap-2">
+                <label htmlFor="add-place" className="sr-only">Add a place</label>
+                <Input
+                  id="add-place"
+                  value={newCity}
+                  onChange={(e) => setNewCity(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCity(); } }}
+                  placeholder="Add a place yourself"
+                  className="h-11 flex-1 rounded-xl bg-card text-[15px]"
+                />
+                <Button type="button" variant="outline" className="h-11 rounded-xl border px-4" onClick={addCity} disabled={!newCity.trim()}>
+                  Add
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden inputs */}
+        <MediaDropZone
+          ref={mediaRef}
+          compact
+          media={preferences.media}
+          onMediaChange={(media) => updatePreferences({ media })}
+          onFramesReady={onFramesReady}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          multiple
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden="true"
+          onChange={(e) => {
+            const files = Array.from(e.target.files || []).filter(f =>
+              f.type.startsWith('image/') || f.type.startsWith('video/')
+            );
+            if (files.length > 0) mediaRef.current?.processFiles(files);
+            e.target.value = '';
+          }}
+        />
+      </section>
+
+      <section className="min-w-0">
+        <h3 className="font-body text-[15px] font-semibold tracking-normal">Not sure where yet? Start with a wish</h3>
+        <p className="mb-3 mt-1 text-sm text-muted-foreground">Tap one and we'll suggest places that fit. Edit it to make it yours.</p>
+        <ul className="border-b border-border">
+          {wishPrompts.map((wish, i) => (
+            <li key={wish} className={cn("border-t", i === 0 ? "border-foreground" : "border-border")}>
+              <button
+                type="button"
+                onClick={() => applyWish(wish)}
+                className="group flex w-full items-center justify-between gap-4 py-3.5 text-left"
+              >
+                <span className="font-display text-2xl leading-tight group-hover:text-primary md:text-[28px]">{wish}</span>
+                <ArrowRight aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   );
 
   const renderStep1 = () => (
-    <div className="px-6 pb-6 space-y-6">
-      <div>
-        <h3 className="font-display font-semibold text-lg text-foreground">The practical bits</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">Rough is fine — you can change anything later.</p>
-      </div>
+    <div className="pt-8">
+      <h2 className="font-display text-4xl leading-none md:text-5xl">The practical bits</h2>
+      <p className="mb-6 mt-3 text-base text-muted-foreground">
+        {destinationHints && placeCount > 0 ? `Filled in for ${preferences.cities[0]} where we could. ` : ''}
+        Rough is fine, you can change anything later.
+      </p>
 
-      {/* Budgets */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Accommodation Budget */}
-        <div className="space-y-3">
-          <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <Wallet className="w-4 h-4 text-primary" />
-            Accommodation (per night)
-          </label>
-          <Slider
-            value={[preferences.budgetAccommodation]}
-            onValueChange={([value]) => updatePreferences({ budgetAccommodation: value })}
-            min={0}
-            max={100}
-            step={25}
-            className="w-full"
-          />
-          <div className="flex justify-between text-sm">
-            <span className="font-medium">{getBudgetLabel(preferences.budgetAccommodation, budgetLabels).label}</span>
-            <span className="text-muted-foreground">{getBudgetLabel(preferences.budgetAccommodation, budgetLabels).range}</span>
-          </div>
-        </div>
-
-        {/* Flight Budget */}
+      <Row label="Flying from">
         {!preferences.noFlight && (
-          <div className="space-y-3">
-            <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <Plane className="w-4 h-4 text-primary" />
-              Flight budget (round trip)
-            </label>
-            <Slider
-              value={[preferences.budgetFlight]}
-              onValueChange={([value]) => updatePreferences({ budgetFlight: value })}
-              min={0}
-              max={100}
-              step={25}
-              className="w-full"
-            />
-            <div className="flex justify-between text-sm">
-              <span className="font-medium">{getBudgetLabel(preferences.budgetFlight, flightBudgetLabels).label}</span>
-              <span className="text-muted-foreground">{getBudgetLabel(preferences.budgetFlight, flightBudgetLabels).range}</span>
-            </div>
+          <div className="mb-2">
+            <AirportSelector value={preferences.departureCity} onChange={setDeparture} />
+            {departureRemembered && preferences.departureCity && (
+              <p className="mt-1.5 text-[13px] text-muted-foreground">From your last trip. Change it if you're leaving from somewhere else.</p>
+            )}
           </div>
         )}
-      </div>
+        <div className="flex min-h-11 items-center gap-2.5">
+          <Checkbox
+            id="no-flight"
+            checked={preferences.noFlight}
+            onCheckedChange={(checked) => updatePreferences({ noFlight: !!checked })}
+          />
+          <Label htmlFor="no-flight" className="cursor-pointer text-[15px] font-normal">No flight needed</Label>
+        </div>
+        {preferences.noFlight && (
+          <p className="text-sm text-muted-foreground">We'll leave flights out: a road trip, a train, somewhere local.</p>
+        )}
+      </Row>
 
-      {/* Date Flexibility */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Calendar className="w-4 h-4 text-primary" />
-          When are you traveling?
-        </label>
+      <Row label="When">
+        {hintWindows.length > 0 && (
+          <div className="mb-2 flex flex-col gap-2">
+            {hintWindows.map(w => {
+              const isSelected = preferences.dateFlexibility === 'month' && preferences.targetMonth === w.label;
+              return (
+                <button
+                  key={w.label}
+                  type="button"
+                  aria-pressed={isSelected}
+                  onClick={() => updatePreferences({ dateFlexibility: 'month', targetMonth: w.label })}
+                  className={cn(optionClass(isSelected), "w-full flex-wrap items-baseline gap-x-4 gap-y-0.5 py-3")}
+                >
+                  <span className="text-[17px] font-semibold">{w.label}</span>
+                  <span className={cn("min-w-[12rem] flex-1 text-sm font-normal", isSelected ? "text-background/80" : "text-muted-foreground")}>{w.why}</span>
+                  <span className={cn("text-[13px] font-medium", isSelected ? "text-background" : "text-muted-foreground")}>{w.tag}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         <div className="flex flex-wrap gap-2">
-          {[
-            { value: 'strict', label: 'Exact dates' },
-            { value: 'month', label: 'A certain month' },
-            { value: 'anytime', label: 'Anytime' },
-          ].map(opt => (
-            <RadioOption
-              key={opt.value}
-              isSelected={preferences.dateFlexibility === opt.value}
-              onClick={() => updatePreferences({ dateFlexibility: opt.value as TripPreferences['dateFlexibility'] })}
-            >
-              {opt.label}
-            </RadioOption>
-          ))}
+          <Option isSelected={preferences.dateFlexibility === 'strict'} onClick={() => updatePreferences({ dateFlexibility: 'strict' })}>
+            Exact dates
+          </Option>
+          <Option
+            isSelected={preferences.dateFlexibility === 'month' && !onHintWindow}
+            onClick={() => updatePreferences({ dateFlexibility: 'month', targetMonth: onHintWindow ? '' : preferences.targetMonth })}
+          >
+            A certain month
+          </Option>
+          <Option isSelected={preferences.dateFlexibility === 'anytime'} onClick={() => updatePreferences({ dateFlexibility: 'anytime' })}>
+            Anytime
+          </Option>
         </div>
 
         {preferences.dateFlexibility === 'strict' && (
-          <div className="space-y-4 mt-3">
+          <div className="mt-3">
             <Popover>
               <PopoverTrigger asChild>
-                <Button variant="outline" className={cn("w-full justify-start", !preferences.startDate && "text-muted-foreground")}>
+                <Button variant="outline" className={cn("h-11 w-full justify-start rounded-xl border border-input text-foreground", !preferences.startDate && "text-muted-foreground")}>
                   {preferences.startDate && preferences.endDate ? (
                     <>
                       {format(preferences.startDate, "MMM d, yyyy")} — {format(preferences.endDate, "MMM d, yyyy")}
@@ -516,7 +576,7 @@ export function TripInputForm({ preferences, onPreferencesChange, onGenerate, is
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
-                <div className="p-3 border-b border-border">
+                <div className="border-b border-border p-3">
                   <p className="text-sm text-muted-foreground">
                     {!preferences.startDate ? "Select your start date" : !preferences.endDate ? "Now select your end date" : "Click to change dates"}
                   </p>
@@ -538,20 +598,20 @@ export function TripInputForm({ preferences, onPreferencesChange, onGenerate, is
                   numberOfMonths={2}
                   className="pointer-events-auto"
                 />
-                <div className="p-3 border-t border-border flex items-center gap-3">
+                <div className="flex items-center gap-3 border-t border-border p-3">
                   <Checkbox
                     id="flexible-days"
                     checked={!!preferences.flexibleDays}
                     onCheckedChange={(checked) => updatePreferences({ flexibleDays: checked ? 2 : undefined })}
                   />
-                  <Label htmlFor="flexible-days" className="text-sm cursor-pointer">
+                  <Label htmlFor="flexible-days" className="cursor-pointer text-sm">
                     ± a few days is okay
                   </Label>
                   {preferences.flexibleDays && (
                     <select
                       value={preferences.flexibleDays}
                       onChange={(e) => updatePreferences({ flexibleDays: parseInt(e.target.value) })}
-                      className="ml-auto text-sm border rounded px-2 py-1 bg-background"
+                      className="ml-auto rounded border bg-background px-2 py-1 text-sm"
                     >
                       <option value={1}>± 1 day</option>
                       <option value={2}>± 2 days</option>
@@ -566,262 +626,249 @@ export function TripInputForm({ preferences, onPreferencesChange, onGenerate, is
           </div>
         )}
 
-        {preferences.dateFlexibility === 'month' && (
+        {preferences.dateFlexibility === 'month' && !onHintWindow && (
           <Input
-            placeholder="e.g. April 2025, Spring, Fall..."
+            aria-label="Which month"
+            placeholder="e.g. April, spring, early fall…"
             value={preferences.targetMonth || ''}
             onChange={(e) => updatePreferences({ targetMonth: e.target.value })}
-            className="mt-3"
+            className="mt-3 h-11 rounded-xl bg-card text-[15px]"
           />
         )}
-      </div>
+      </Row>
 
       {/* Duration — only when not using exact dates */}
       {preferences.dateFlexibility !== 'strict' && (
-        <div className="space-y-3">
-          <label className="text-sm font-medium text-foreground flex items-center gap-2">
-            <Clock className="w-4 h-4 text-primary" />
-            Trip duration
-          </label>
+        <Row label="How long">
           <div className="flex flex-wrap gap-2">
-            {[
+            {([
               { value: 'weekend', label: 'Weekend' },
               { value: 'long-weekend', label: 'Long weekend' },
               { value: '1-week', label: '1 week' },
               { value: '2-weeks', label: '2 weeks' },
               { value: 'strict', label: 'Exact days' },
               { value: 'flexible', label: 'Flexible' },
-            ].map(opt => (
-              <RadioOption
+            ] as const).map(opt => (
+              <Option
                 key={opt.value}
                 isSelected={preferences.durationFlexibility === opt.value}
-                onClick={() => updatePreferences({ durationFlexibility: opt.value as TripPreferences['durationFlexibility'] })}
+                onClick={() => updatePreferences({ durationFlexibility: opt.value })}
               >
                 {opt.label}
-              </RadioOption>
+              </Option>
             ))}
           </div>
 
           {(preferences.durationFlexibility === 'strict' || preferences.durationFlexibility === 'flexible-days') && (
-            <div className="flex items-center gap-3 mt-3">
+            <div className="mt-3 flex items-center gap-3">
               <Input
                 type="number"
+                aria-label="Number of days"
                 min={1}
                 max={60}
                 value={preferences.durationDays}
                 onChange={(e) => updatePreferences({ durationDays: parseInt(e.target.value) || 7 })}
-                className="w-24"
+                className="h-11 w-24 rounded-xl bg-card"
               />
               <span className="text-sm text-muted-foreground">days</span>
             </div>
           )}
-        </div>
+        </Row>
       )}
 
-      {/* Flight Preferences */}
-      <div className="p-4 bg-muted/20 rounded-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <Plane className="w-4 h-4 text-primary" />
-            Flight Preferences
-          </h4>
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="no-flight"
-              checked={preferences.noFlight}
-              onCheckedChange={(checked) => updatePreferences({ noFlight: !!checked })}
-            />
-            <Label htmlFor="no-flight" className="text-sm cursor-pointer text-muted-foreground">
-              No flight needed
-            </Label>
-          </div>
+      <Row label="Stay, per night">
+        <Slider
+          aria-label="Accommodation budget per night"
+          value={[preferences.budgetAccommodation]}
+          onValueChange={([value]) => updatePreferences({ budgetAccommodation: value })}
+          min={0}
+          max={100}
+          step={25}
+          className="w-full py-3"
+        />
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span className="font-display text-2xl">{stayBand.label} · {stayBand.range}</span>
+          {destinationHints?.stay && (
+            <span className="min-w-[14rem] flex-1 text-sm text-muted-foreground">
+              In {preferences.cities[0] ?? 'this area'}: {destinationHints.stay[stayBand.key]}.
+            </span>
+          )}
         </div>
+      </Row>
 
-        {!preferences.noFlight ? (
-          <>
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Departing from</Label>
-              <AirportSelector
-                value={preferences.departureCity}
-                onChange={(value) => updatePreferences({ departureCity: value })}
-              />
+      {!preferences.noFlight && (
+        <>
+          <Row label="Flights, round trip">
+            <Slider
+              aria-label="Flight budget, round trip"
+              value={[preferences.budgetFlight]}
+              onValueChange={([value]) => updatePreferences({ budgetFlight: value })}
+              min={0}
+              max={100}
+              step={25}
+              className="w-full py-3"
+            />
+            <span className="font-display text-2xl">{flightBand.label} · {flightBand.range}</span>
+          </Row>
+
+          <Row label="Layovers">
+            <div className="flex flex-wrap gap-2">
+              {([
+                { value: 'nonstop', label: 'Nonstop only' },
+                { value: 'short-layover', label: 'Short layovers OK' },
+                { value: 'long-layover', label: 'Any layovers' },
+              ] as const).map(opt => (
+                <Option
+                  key={opt.value}
+                  isSelected={preferences.flightDirectness === opt.value}
+                  onClick={() => updatePreferences({ flightDirectness: opt.value })}
+                >
+                  {opt.label}
+                </Option>
+              ))}
             </div>
+          </Row>
+        </>
+      )}
 
-            <div className="space-y-2">
-              <Label className="text-sm text-muted-foreground">Flight directness</Label>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  { value: 'nonstop', label: 'Nonstop only' },
-                  { value: 'short-layover', label: 'Short layovers OK' },
-                  { value: 'long-layover', label: 'Any layovers' },
-                ].map(opt => (
-                  <RadioOption
-                    key={opt.value}
-                    isSelected={preferences.flightDirectness === opt.value}
-                    onClick={() => updatePreferences({ flightDirectness: opt.value as TripPreferences['flightDirectness'] })}
-                  >
-                    {opt.label}
-                  </RadioOption>
-                ))}
-              </div>
-            </div>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            The itinerary will skip all flight-related content (e.g., road trip, train, local trip).
-          </p>
-        )}
-      </div>
-
-      {/* Bottom action row */}
-      <div className="flex items-center justify-between pt-2">
-        <Button type="button" variant="ghost" onClick={() => setCurrentStep(0)}>
-          &lsaquo; Back
-        </Button>
-        <Button type="button" variant="default" onClick={() => setCurrentStep(2)}>
-          Continue &rsaquo;
+      <div className="flex items-center justify-between border-t border-border pt-6">
+        <button type="button" onClick={() => setCurrentStep(0)} className="min-h-11 text-base underline underline-offset-4 hover:text-primary">
+          Back
+        </button>
+        <Button type="button" className="h-[52px] rounded-xl px-6 text-base font-semibold" onClick={() => setCurrentStep(2)}>
+          Continue <ArrowRight aria-hidden="true" />
         </Button>
       </div>
     </div>
   );
 
   const renderStep2 = () => (
-    <div className="px-6 pb-6 space-y-6">
-      <div>
-        <h3 className="font-display font-semibold text-lg text-foreground">Set the vibe</h3>
-        <p className="text-sm text-muted-foreground mt-0.5">This is where the itinerary gets personal.</p>
-      </div>
+    <div className="pt-8">
+      <h2 className="font-display text-4xl leading-none md:text-5xl">Set the vibe</h2>
+      <p className="mb-6 mt-3 text-base text-muted-foreground">This is where the itinerary gets personal.</p>
 
-      {/* Atmosphere */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          Atmosphere
-        </label>
+      {inferredCount > 0 && (
+        <p className="mb-4 flex items-center gap-2.5 text-[15px]">
+          <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 bg-marigold outline outline-1 outline-foreground" />
+          {inferredCount} of these came from your photos and videos. Tap to change any.
+        </p>
+      )}
+
+      <Row label="Who's travelling" hint="Photos can't tell us this">
         <div className="flex flex-wrap gap-2">
-          {atmosphereOptions.map(opt => (
-            <ToggleOption
+          {travelerOptions.map(opt => (
+            <Option
               key={opt.id}
-              isSelected={preferences.atmosphere.includes(opt.id)}
-              onClick={() => toggleArrayItem('atmosphere', opt.id)}
-              icon={opt.icon}
-              label={opt.label}
-              compact
-            />
+              isSelected={preferences.travelers === opt.id}
+              onClick={() => updatePreferences({ travelers: preferences.travelers === opt.id ? '' : opt.id })}
+            >
+              {opt.label}
+            </Option>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Adventure Level */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Zap className="w-4 h-4 text-primary" />
-          Adventure level
-        </label>
+      <Row label="Atmosphere" hint="Pick any">
+        <div className="flex flex-wrap gap-2">
+          {atmosphereOptions.map(opt => (
+            <Option
+              key={opt.id}
+              isSelected={preferences.atmosphere.includes(opt.id)}
+              inferred={inferredVibe?.atmosphere.includes(opt.id)}
+              onClick={() => toggleArrayItem('atmosphere', opt.id)}
+            >
+              {opt.label}
+            </Option>
+          ))}
+        </div>
+      </Row>
+
+      <Row label="Adventure level" hint="Pick one">
         <div className="flex flex-wrap gap-2">
           {adventureOptions.map(opt => (
-            <RadioOption
+            <Option
               key={opt.id}
               isSelected={preferences.adventureLevel === opt.id}
+              inferred={inferredVibe?.adventureLevel === opt.id}
               onClick={() => updatePreferences({ adventureLevel: opt.id })}
             >
               {opt.label}
-            </RadioOption>
+            </Option>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Guided vs Self-serve */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Users className="w-4 h-4 text-primary" />
-          Guided vs. self-serve activities
-        </label>
+      <Row label="Guided vs. self-serve" hint="Pick one">
         <div className="flex flex-wrap gap-2">
           {guidedOptions.map(opt => (
-            <RadioOption
+            <Option
               key={opt.id}
               isSelected={preferences.guidedPreference === opt.id}
               onClick={() => updatePreferences({ guidedPreference: opt.id as TripPreferences['guidedPreference'] })}
             >
               {opt.label}
-            </RadioOption>
+            </Option>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Food & Drink */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Utensils className="w-4 h-4 text-primary" />
-          Food & drink preferences
-        </label>
+      <Row label="Food & drink" hint="Pick any">
         <div className="flex flex-wrap gap-2">
           {foodDrinkOptions.map(opt => (
-            <ToggleOption
+            <Option
               key={opt.id}
               isSelected={preferences.foodDrink.includes(opt.id)}
+              inferred={inferredVibe?.foodDrink.includes(opt.id)}
               onClick={() => toggleArrayItem('foodDrink', opt.id)}
-              icon={opt.icon}
-              label={opt.label}
-              compact
-            />
+            >
+              {opt.label}
+            </Option>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Interests */}
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Globe className="w-4 h-4 text-primary" />
-          What matters most?
-        </label>
-        <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: 'none' }}>
+      <Row label="What matters most?" hint="Pick any">
+        <div className="flex flex-wrap gap-2">
           {interestOptions.map(opt => (
-            <ToggleOption
+            <Option
               key={opt.id}
               isSelected={preferences.interests.includes(opt.id)}
+              inferred={inferredVibe?.interests.includes(opt.id)}
               onClick={() => toggleArrayItem('interests', opt.id)}
-              icon={opt.icon}
-              label={opt.label}
-              compact
-            />
+            >
+              {opt.label}
+            </Option>
           ))}
         </div>
-      </div>
+      </Row>
 
-      {/* Additional Notes */}
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground flex items-center gap-2">
-          Anything else we should know?
-          <span className="text-xs text-muted-foreground font-normal">OPTIONAL</span>
-        </label>
+      <Row label="Anything else?" hint="Optional" htmlFor="trip-notes">
         <Textarea
+          id="trip-notes"
           value={preferences.additionalNotes}
           onChange={(e) => updatePreferences({ additionalNotes: e.target.value })}
-          placeholder="Dietary restrictions, mobility needs, places you've heard about, things to avoid, who you're traveling with..."
-          className="min-h-[100px] resize-none"
+          placeholder="Dietary restrictions, mobility needs, places you've heard about, things to avoid…"
+          className="min-h-[100px] resize-y rounded-xl bg-card text-[15px]"
         />
-      </div>
+      </Row>
 
-      {/* Bottom action row */}
-      <div className="flex items-center justify-between pt-2">
-        <Button type="button" variant="ghost" onClick={() => setCurrentStep(1)}>
-          &lsaquo; Back
-        </Button>
+      <div className="flex items-center justify-between border-t border-border pt-6">
+        <button type="button" onClick={() => setCurrentStep(1)} className="min-h-11 text-base underline underline-offset-4 hover:text-primary">
+          Back
+        </button>
         <Button
           type="button"
-          variant="hero"
-          size="lg"
-          onClick={handleGenerate}
+          className="h-[52px] rounded-xl px-6 text-base font-semibold"
+          onClick={() => onGenerate(undefined)}
           disabled={isGenerating}
         >
           {isGenerating ? (
             <>
-              <Loader2 className="w-4 h-4 animate-spin mr-2" />
-              Crafting your trip...
+              <Loader2 className="animate-spin" />
+              Crafting your trip…
             </>
           ) : (
-            <>Plan My Trip ✦</>
+            <>Plan my trip <ArrowRight aria-hidden="true" /></>
           )}
         </Button>
       </div>
@@ -829,29 +876,11 @@ export function TripInputForm({ preferences, onPreferencesChange, onGenerate, is
   );
 
   return (
-    <div className="space-y-3">
-      <div className="bg-card rounded-2xl shadow-medium overflow-hidden animate-slide-up">
-        <StepIndicator />
-        {currentStep === 0 && renderStep0()}
-        {currentStep === 1 && renderStep1()}
-        {currentStep === 2 && renderStep2()}
-      </div>
-
-      {/* Suggestion chips — only shown on step 0 */}
-      {currentStep === 0 && (
-        <div className="flex flex-wrap gap-2 px-1">
-          {suggestionChips.map((chip) => (
-            <button
-              key={chip}
-              type="button"
-              onClick={() => updatePreferences({ additionalNotes: chip })}
-              className="border border-border rounded-full px-4 py-2 text-sm hover:bg-muted/40 transition-colors"
-            >
-              {chip}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="animate-fade-in">
+      {renderStepper()}
+      {currentStep === 0 && renderStep0()}
+      {currentStep === 1 && renderStep1()}
+      {currentStep === 2 && renderStep2()}
     </div>
   );
 }

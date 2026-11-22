@@ -88,6 +88,10 @@ const TILE = 320;
 // A shallow arc high in the sky, so it clears the walker's hat on the way past.
 const ROUTE_PATH = "M8 58 Q 160 10 312 50";
 const PLANE = "M-9 -5 L9 0 L-9 5 L-5 0 Z";
+// The app icon's pin, scaled down to mark where the route lands
+const PIN = "M50 84 C 44 74 26 60 26 41 A 24 24 0 1 1 74 41 C 74 60 56 74 50 84 Z";
+const ROUTE_END = { x: 312, y: 50 };
+const PIN_SCALE = 0.22;
 
 type ShapeProps = { x: number; y?: number; s?: number };
 
@@ -625,13 +629,13 @@ export function ItineraryLoadingScene({
         className="doodle-scene w-full max-w-[460px] h-auto"
         fill="none"
         stroke="currentColor"
-        strokeWidth={2}
+        strokeWidth={1.6}
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        {/* Sky */}
-        <g className="text-primary/35" stroke="currentColor">
-          <circle cx="284" cy="22" r="8.5" />
+        {/* Sky: a marigold sun, clouds in faint ink */}
+        <g className="text-marigold" stroke="currentColor">
+          <circle cx="284" cy="22" r="7.5" fill="currentColor" stroke="none" />
           <g
             className="doodle-spin"
             style={{ transformOrigin: '284px 22px' }}
@@ -644,6 +648,8 @@ export function ItineraryLoadingScene({
               />
             ))}
           </g>
+        </g>
+        <g className="text-foreground/25">
           <g className="doodle-cloud" style={{ animationDelay: '-4s' }}>
             <Cloud x={0} y={30} s={0.9} />
           </g>
@@ -652,13 +658,21 @@ export function ItineraryLoadingScene({
           </g>
         </g>
 
-        {/* The route being drawn, with a little plane riding it */}
+        {/* The route being drawn, with a little plane riding it to the pin */}
         <g className="text-primary">
           <path id={routeId} className="doodle-route" d={ROUTE_PATH} />
+          <g
+            className="text-foreground"
+            transform={`translate(${ROUTE_END.x - 50 * PIN_SCALE} ${ROUTE_END.y - 84 * PIN_SCALE + 1}) scale(${PIN_SCALE})`}
+            stroke="none"
+          >
+            <path d={PIN} fill="currentColor" />
+            <circle cx="50" cy="41" r="10" className="fill-marigold" />
+          </g>
           {prefersReducedMotion ? (
-            <path d={PLANE} strokeWidth={1.8} transform="translate(312 50) rotate(18)" />
+            <path d={PLANE} strokeWidth={1.5} transform="translate(292 44) rotate(14)" />
           ) : (
-            <path d={PLANE} strokeWidth={1.8}>
+            <path d={PLANE} strokeWidth={1.5}>
               <animateMotion dur="7s" rotate="auto" repeatCount="indefinite">
                 {/* href is SVG 2; xlink:href keeps older Safari happy */}
                 <mpath href={`#${routeId}`} xlinkHref={`#${routeId}`} />
@@ -668,21 +682,22 @@ export function ItineraryLoadingScene({
         </g>
 
         {/* Distant scenery, drifting slowly */}
-        <g className="doodle-far text-foreground/20">
+        <g className="doodle-far text-foreground/25">
           <g>{far}</g>
           <g transform={`translate(${TILE} 0)`}>{far}</g>
         </g>
 
         {/* Foreground scenery, drifting past */}
-        <g className="doodle-near text-foreground/45">
+        <g className="doodle-near text-foreground/60">
           <g>{near}</g>
           <g transform={`translate(${TILE} 0)`}>{near}</g>
         </g>
 
         {/* Ground */}
-        <g className="text-foreground/30">
-          <path d={`M0 ${GROUND_Y} h320`} />
-          <g className="doodle-near">
+        {/* Ground: a ruled ink line, like the rules between sections of the form */}
+        <g className="text-foreground">
+          <path d={`M0 ${GROUND_Y} h320`} strokeWidth={1.4} />
+          <g className="doodle-near text-foreground/25">
             <path
               className="doodle-ground"
               d={`M0 ${GROUND_Y + 7} h640`}
@@ -691,8 +706,8 @@ export function ItineraryLoadingScene({
           </g>
         </g>
 
-        {/* The traveller. Hip (62,104), shoulder (62,84), hand at rest (62,104). */}
-        <g className="doodle-walker text-primary">
+        {/* The traveller, in ink. Hip (62,104), shoulder (62,84), hand at rest (62,104). */}
+        <g className="doodle-walker text-foreground">
           {/* back leg + arm sit behind the body */}
           <g className="doodle-leg-b" style={{ transformOrigin: '62px 104px' }}>
             <path d="M62 104 v34" strokeWidth={1.8} opacity={0.55} />
@@ -715,16 +730,17 @@ export function ItineraryLoadingScene({
           </g>
           <g className="doodle-arm-b" style={{ transformOrigin: '62px 84px' }}>
             <path d="M62 84 L62 104" />
-            {HAND_ITEMS[scene]}
+            {/* what they carry is the one teal thing on them */}
+            <g className="text-primary">{HAND_ITEMS[scene]}</g>
           </g>
         </g>
       </svg>
 
-      <div className="space-y-1.5">
-        <p className="font-semibold text-foreground">
+      <div className="space-y-2">
+        <p className="font-display text-3xl leading-tight text-foreground md:text-4xl" aria-live="polite">
           {headline ?? "Drawing up your itinerary…"}
         </p>
-        <p key={lineIndex} className="text-sm text-muted-foreground animate-fade-in min-h-[20px]">
+        <p key={lineIndex} className="text-[15px] text-muted-foreground animate-fade-in min-h-[22px]">
           {lines[lineIndex]}
         </p>
       </div>

@@ -52,9 +52,9 @@ export function ItemFeedbackControls({
 
   if (item.isUpdating) {
     return (
-      <div className="flex items-center gap-2 px-2 py-1 bg-primary/10 rounded-lg">
-        <Loader2 className="w-3 h-3 animate-spin text-primary" />
-        <span className="text-xs text-primary">Updating...</span>
+      <div className="flex items-center gap-2 px-2 py-1 bg-accent rounded-lg">
+        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+        <span className="text-xs text-foreground">Updating...</span>
       </div>
     );
   }
@@ -70,7 +70,7 @@ export function ItemFeedbackControls({
         size="sm"
         className={cn(
           "h-7 w-7 p-0 rounded-full",
-          item.vote === 'up' && "bg-emerald-500/20 text-emerald-600"
+          item.vote === 'up' && "bg-success-soft text-success"
         )}
         onClick={(e) => handleVote('up', e)}
         title="Keep this"
@@ -83,7 +83,7 @@ export function ItemFeedbackControls({
         size="sm"
         className={cn(
           "h-7 w-7 p-0 rounded-full",
-          item.vote === 'down' && "bg-red-500/20 text-red-600"
+          item.vote === 'down' && "bg-destructive-soft text-destructive"
         )}
         onClick={(e) => handleVote('down', e)}
         title="Replace this"
@@ -96,7 +96,7 @@ export function ItemFeedbackControls({
         size="sm"
         className={cn(
           "h-7 w-7 p-0 rounded-full",
-          item.vote === 'neutral' && "bg-amber-500/20 text-amber-600"
+          item.vote === 'neutral' && "bg-warning-soft text-warning"
         )}
         onClick={(e) => handleVote('neutral', e)}
         title="Indifferent"
@@ -112,7 +112,7 @@ export function ItemFeedbackControls({
             size="sm"
             className={cn(
               "h-7 w-7 p-0 rounded-full",
-              item.comment && "bg-blue-500/20 text-blue-600"
+              item.comment && "bg-foreground text-background"
             )}
             title="Add note"
           >

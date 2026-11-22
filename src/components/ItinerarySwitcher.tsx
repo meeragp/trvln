@@ -26,11 +26,12 @@ export function ItinerarySwitcher({
           <button
             key={variant.id}
             onClick={() => onSelect(index)}
+            aria-pressed={isActive}
             className={cn(
-              "flex-1 min-w-fit flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl text-sm font-semibold border transition-all whitespace-nowrap",
+              "flex-1 min-w-fit flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-[15px] font-medium border transition-colors whitespace-nowrap",
               isActive
-                ? "bg-background text-foreground border-primary shadow-sm"
-                : "bg-muted/20 text-muted-foreground border-transparent hover:bg-muted/40 hover:text-foreground"
+                ? "bg-foreground text-background border-foreground"
+                : "bg-transparent text-foreground border-input hover:border-foreground"
             )}
           >
             <span className="text-base leading-none">{variant.emoji}</span>
@@ -39,7 +40,7 @@ export function ItinerarySwitcher({
               <Loader2 className="w-3 h-3 animate-spin shrink-0" />
             )}
             {!isLoading && hasContent && !isActive && (
-              <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+              <span aria-label="Ready" className="w-2 h-2 bg-marigold shrink-0" />
             )}
           </button>
         );

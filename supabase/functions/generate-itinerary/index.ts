@@ -1413,7 +1413,7 @@ serve(async (req) => {
     } = preferences;
 
     const trip = describeTrip(preferences);
-    const { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel } = trip;
+    const { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel, travelersLabel } = trip;
 
     // Theme variant context
     let themeContext = "";
@@ -1482,6 +1482,7 @@ ${flightContext}
 - Duration: ${durationContext}
 
 **VIBE**:
+- Traveling as: ${travelersLabel}
 - Atmosphere: ${atmosphere?.length > 0 ? atmosphere.join(", ") : "No preference"}
 - Adventure level: ${adventureLevel || "No preference"}
 - Guided vs self-serve: ${guidedLabel}
@@ -2224,7 +2225,7 @@ Put all of this in the \`emit_trip_plan\` tool call. Do not write the itinerary 
             const critiquePrompt = `You are reading a travel plan before it gets written up, the way a senior planner reads a junior's draft. You are not rewriting it — you are saying what is wrong with it.
 
 The traveler asked for: ${durationContext}, ${budgetInfo.label} budget, ${dateContext}.
-Interests: ${interests?.join(" > ") || "none stated"}. Atmosphere: ${atmosphere?.join(", ") || "none stated"}. Adventure level: ${adventureLevel || "none stated"}.
+Interests: ${interests?.join(" > ") || "none stated"}. Atmosphere: ${atmosphere?.join(", ") || "none stated"}. Adventure level: ${adventureLevel || "none stated"}. Traveling as: ${travelersLabel}.
 In their words: ${tripNotes || "nothing further"}
 ${sourcePlan?.tripCharacter ? `What this trip actually is: ${sourcePlan.tripCharacter}` : ""}${sourcePlan?.avoid?.length ? `\n\nThings that would make this feel canned to this traveler:\n${sourcePlan.avoid.map(a => `- ${a}`).join("\n")}` : ""}
 

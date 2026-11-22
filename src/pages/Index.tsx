@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Sparkles, MapPin, Plane, ChevronLeft, Plus, Bookmark, BookmarkCheck, Loader2 as BookmarkLoader, RefreshCw } from "lucide-react";
+import { ChevronLeft, Plus, Bookmark, BookmarkCheck, Loader2 as BookmarkLoader, RefreshCw } from "lucide-react";
 import { TripInputForm, TripPreferences } from "@/components/TripInputForm";
 import { ItineraryOutput } from "@/components/ItineraryOutput";
 import { TripSummaryCard } from "@/components/TripSummaryCard";
@@ -18,6 +18,7 @@ import { toast } from "@/hooks/use-toast";
 import { ItineraryData } from "@/types/itinerary";
 import { parseStructuredItinerary, stripPlanningSection, buildEditableItinerary, mergeEditedItinerary } from "@/lib/itineraryEdit";
 import type { Json } from "@/integrations/supabase/types";
+import { applyInferredVibe, mergeVibes, type DestinationHints, type InferredVibe } from "@/lib/inspirationInsights";
 import { format } from "date-fns";
 import type { User } from "@supabase/supabase-js";
 
@@ -37,6 +38,7 @@ const defaultPreferences: TripPreferences = {
   noFlight: false,
   departureCity: '',
   flightDirectness: 'short-layover',
+  travelers: '',
   atmosphere: [],
   adventureLevel: 'active',
   guidedPreference: 'some-guided',
@@ -265,6 +267,29 @@ const Index = () => {
   const [isSuggestingThemes, setIsSuggestingThemes] = useState(false);
   const [isAnalyzingMedia, setIsAnalyzingMedia] = useState(false);
   const [isIdentifyingLocations, setIsIdentifyingLocations] = useState(false);
+  // What the media analysis read beyond place names: the style of trip shown.
+  // Kept out of `preferences` because it describes our guess, not their answer.
+  const [inferredVibe, setInferredVibe] = useState<InferredVibe | null>(null);
+  // When-to-go and budget hints for the places currently on the list
+  const [destinationHints, setDestinationHints] = useState<DestinationHints | null>(null);
+  // Places the traveler removed from the list. Media is analyzed again at
+  // generate time, which would otherwise put a removed place straight back.
+  const dismissedPlacesRef = useRef<Set<string>>(new Set());
+  const isDismissed = (place: string) => dismissedPlacesRef.current.has(place.toLowerCase());
+  const handleFormPreferencesChange = useCallback((next: TripPreferences) => {
+    setPreferences(prev => {
+      const kept = new Set(next.cities.map(c => c.toLowerCase()));
+      for (const c of prev.cities) if (!kept.has(c.toLowerCase())) dismissedPlacesRef.current.add(c.toLowerCase());
+      // Adding a place by hand undoes an earlier removal of it
+      for (const c of next.cities) dismissedPlacesRef.current.delete(c.toLowerCase());
+      return next;
+    });
+  }, []);
+  // Which step of the input form is showing (0 = Inspiration)
+  const [inputStep, setInputStep] = useState(0);
+  // The form always opens on its first step, so leaving the input screen and
+  // coming back must not leave the hero hidden
+  useEffect(() => { setInputStep(0); }, [view]);
   // True while fetching itineraries the server finished after this tab was
   // backgrounded/reloaded mid-generation.
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -395,7 +420,7 @@ const Index = () => {
   const analyzeInspiration = useCallback(async (
     mediaUrls: string[],
     source: 'image' | 'video' | 'mixed',
-  ): Promise<{ destinations: IdentifiedDestination[]; error?: string }> => {
+  ): Promise<{ destinations: IdentifiedDestination[]; vibe?: InferredVibe | null; error?: string }> => {
     if (mediaUrls.length === 0) return { destinations: [] };
     const fallbackError = "Location detection is unavailable right now. Add your destinations manually.";
     try {
@@ -405,11 +430,40 @@ const Index = () => {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return { destinations: [], error: typeof data.error === "string" ? data.error : fallbackError };
-      return { destinations: data.destinations || [] };
+      return { destinations: data.destinations || [], vibe: data.vibe ?? null };
     } catch {
       return { destinations: [], error: fallbackError };
     }
   }, [getHeaders]);
+
+  // Destination hints for the Logistics step. Purely decorative: any failure
+  // (including the function not being deployed yet) just leaves the step
+  // without hints, so nothing here reports an error.
+  const citiesKey = preferences.cities.join('|');
+  useEffect(() => {
+    setDestinationHints(null);
+    const cities = citiesKey ? citiesKey.split('|').slice(0, 8) : [];
+    if (cities.length === 0) return;
+    let cancelled = false;
+    // Wait for the list to settle: places arrive one analysis pass at a time
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/destination-hints`, {
+          method: "POST", headers: await getHeaders(), body: JSON.stringify({ cities }),
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (cancelled) return;
+        const hints: DestinationHints = {
+          bestTime: data.bestTime ?? null,
+          valueTime: data.valueTime ?? null,
+          stay: data.stay ?? null,
+        };
+        if (hints.bestTime || hints.valueTime || hints.stay) setDestinationHints(hints);
+      } catch { /* no hints */ }
+    }, 800);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [citiesKey, getHeaders]);
 
   const suggestThemes = useCallback(async (prefs: TripPreferences) => {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-themes`, {
@@ -661,6 +715,9 @@ const Index = () => {
 
   const handleNewSearch = useCallback(() => {
     setPreferences(defaultPreferences);
+    setInferredVibe(null);
+    dismissedPlacesRef.current = new Set();
+    setDestinationHints(null);
     setItineraries([]);
     setActiveVariant(0);
     setLoadingVariants({});
@@ -1086,11 +1143,19 @@ const Index = () => {
         const hasVideoFrames = mediaWithUrls.some(item => item.type === 'video' && item.frameUrls?.length);
         if (allImageUrls.length > 0) {
           const source = hasPhotos && hasVideoFrames ? 'mixed' : hasVideoFrames ? 'video' : 'image';
-          const { destinations: identified, error: detectError } = await analyzeInspiration(allImageUrls, source);
+          const { destinations: identified, vibe, error: detectError } = await analyzeInspiration(allImageUrls, source);
           if (detectError) toast({ title: "Couldn't identify locations from your media", description: detectError });
+          if (vibe) {
+            setInferredVibe(prev => mergeVibes(prev, vibe));
+            // Photos dropped in are only analyzed here, at generate time, so
+            // this is where their vibe reaches the plan
+            effectivePreferences = { ...effectivePreferences, ...applyInferredVibe(effectivePreferences, vibe, defaultPreferences.adventureLevel) };
+            setPreferences(effectivePreferences);
+          }
           const newLocations = identified
             .filter(d => d.confidence === 'high' || d.confidence === 'medium')
             .map(d => d.location)
+            .filter(loc => !isDismissed(loc))
             .filter(loc => !effectivePreferences.cities.some(c =>
               c.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(c.toLowerCase())
             ));
@@ -1242,7 +1307,7 @@ const Index = () => {
         </button>
         <div className="flex items-center gap-2">
           <img src="/favicon.svg" alt="Travellin'" className="w-5 h-5" />
-          <span className="font-display text-sm text-primary">Travellin'</span>
+          <span className="font-display text-lg leading-none">Travellin'</span>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -1275,15 +1340,15 @@ const Index = () => {
   // ── Results screen ─────────────────────────────────────────────────────────
   if (view === 'results') {
     return (
-      <div className="min-h-screen gradient-hero">
+      <div className="min-h-screen bg-background">
         <ResultsNav />
         <main className="container pb-20">
           <div className="max-w-4xl mx-auto pt-6 space-y-6">
             {/* Reconnect indicator — server kept generating while the tab was away */}
             {isReconnecting && (
               <div className="bg-card rounded-2xl shadow-medium p-6 flex items-center gap-4 animate-slide-up">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <RefreshCw className="w-5 h-5 text-primary animate-spin" />
+                <div className="w-10 h-10 rounded-full bg-accent text-foreground flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 animate-spin" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Finishing your itineraries...</p>
@@ -1306,7 +1371,7 @@ const Index = () => {
                     {isSaving ? (
                       <BookmarkLoader className="w-4 h-4 animate-spin" />
                     ) : isSaved ? (
-                      <BookmarkCheck className="w-4 h-4 text-primary" />
+                      <BookmarkCheck className="w-4 h-4 text-foreground" />
                     ) : (
                       <Bookmark className="w-4 h-4" />
                     )}
@@ -1326,12 +1391,17 @@ const Index = () => {
             {(itineraries.length > 0 || isGenerating) && (
               <div className="bg-card rounded-2xl shadow-medium">
                 <div className="sticky top-[57px] z-20 bg-card/95 backdrop-blur-sm px-6 py-5 md:px-8 rounded-t-2xl">
-                  <h2 className="font-display text-xl font-bold text-foreground leading-tight">
-                    {currentItinerary ? `${currentItinerary.emoji} ${currentItinerary.name}` : "Your Personalized Itinerary"}
+                  <h2 className="font-display text-xl text-foreground leading-tight">
+                    {currentItinerary
+                      ? `${currentItinerary.emoji} ${currentItinerary.name}`
+                      : preferences.cities[0] ? `Your ${preferences.cities[0].split(',')[0]} trip` : "Your trip"}
                   </h2>
-                  <p className="text-sm text-muted-foreground mt-1 leading-snug">
-                    {currentItinerary?.structuredData?.summary?.vibeSummary || currentItinerary?.tagline || "Crafted based on your preferences"}
-                  </p>
+                  {/* Before themes exist there is nothing true to say here yet */}
+                  {(currentItinerary?.structuredData?.summary?.vibeSummary || currentItinerary?.tagline) && (
+                    <p className="text-sm text-muted-foreground mt-1 leading-snug">
+                      {currentItinerary?.structuredData?.summary?.vibeSummary || currentItinerary?.tagline}
+                    </p>
+                  )}
                 </div>
                 <div className="p-6 md:p-8">
                   <ItineraryOutput
@@ -1381,59 +1451,70 @@ const Index = () => {
 
   // ── Input screen ───────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen gradient-hero">
-      <header className="relative overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-20 left-10 w-72 h-72 bg-primary/5 rounded-full blur-3xl animate-float" />
-          <div className="absolute bottom-10 right-20 w-96 h-96 bg-olive/5 rounded-full blur-3xl animate-float" style={{ animationDelay: '-3s' }} />
-        </div>
-        <div className="absolute top-4 right-4 z-10">
-          <UserMenu />
-        </div>
-        <div className="container relative pt-12 pb-8 md:pt-20 md:pb-12">
-          <div className="flex items-center justify-center gap-2 mb-6">
-            <img src="/favicon.svg" alt="Travellin'" className="w-8 h-8" />
-            <span className="font-display text-lg text-primary">Travellin'</span>
+    <div className="min-h-screen bg-background">
+      <header className="container max-w-6xl">
+        <div className="flex items-center justify-between gap-4 border-b border-foreground py-4">
+          <div className="flex items-center gap-2.5">
+            <img src="/favicon.svg" alt="" className="h-7 w-7" />
+            <span className="font-display text-2xl leading-none">Travellin'</span>
           </div>
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-display font-bold text-center leading-tight text-balance max-w-4xl mx-auto bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
-            {firstName ? `Where to next, ${firstName}?` : "Where to next?"}
-          </h1>
-          <p className="mt-6 text-lg md:text-xl text-muted-foreground text-center max-w-2xl mx-auto text-balance">
-            Drop your saved TikToks, tell us your vibe, and let AI craft the perfect itinerary — complete with flights, hidden gems, and local favorites.
-          </p>
-          <div className="flex items-center justify-center gap-6 mt-8 text-sm text-muted-foreground">
-            <div className="flex items-center gap-2"><MapPin className="w-4 h-4" /><span>Hidden gems included</span></div>
-            <div className="flex items-center gap-2"><Plane className="w-4 h-4" /><span>Flight suggestions</span></div>
-            <div className="flex items-center gap-2"><Sparkles className="w-4 h-4" /><span>Local knowledge</span></div>
+          <div className="flex items-center gap-5">
+            <button
+              onClick={handleViewSavedTrips}
+              className="min-h-11 text-[15px] underline-offset-4 hover:underline"
+            >
+              Saved trips
+            </button>
+            <UserMenu />
           </div>
         </div>
+
+        {/* The hero belongs to the first step; after that the form needs the room */}
+        {inputStep === 0 && (
+          <>
+            <h1 className="mt-10 font-display text-6xl leading-[0.95] text-balance md:mt-14 md:text-8xl lg:text-9xl">
+              {firstName ? `Where to next, ${firstName}?` : "Where to next?"}
+            </h1>
+            <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
+              Drop your saved TikToks, tell us your vibe, and get an itinerary built around them, with flights, hidden gems and local favorites.
+            </p>
+          </>
+        )}
       </header>
 
-      <main className="container pb-20">
-        <div className="max-w-4xl mx-auto space-y-6">
+      <main className="container max-w-6xl pb-20 pt-10">
+        <div>
           <TripInputForm
             preferences={preferences}
-            onPreferencesChange={setPreferences}
+            onPreferencesChange={handleFormPreferencesChange}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
             isIdentifyingLocations={isIdentifyingLocations}
+            inferredVibe={inferredVibe}
+            destinationHints={destinationHints}
+            onStepChange={setInputStep}
             onFramesReady={async (frameUrls) => {
               setIsIdentifyingLocations(true);
               try {
-                const { destinations: identified, error: detectError } = await analyzeInspiration(frameUrls, 'video');
+                const { destinations: identified, vibe, error: detectError } = await analyzeInspiration(frameUrls, 'video');
                 if (detectError) {
                   toast({ title: "Couldn't identify locations", description: detectError });
                   return;
                 }
+                if (vibe) {
+                  setInferredVibe(prev => mergeVibes(prev, vibe));
+                  setPreferences(prev => ({ ...prev, ...applyInferredVibe(prev, vibe, defaultPreferences.adventureLevel) }));
+                }
                 const newLocations = identified
                   .filter(d => d.confidence === 'high' || d.confidence === 'medium')
                   .map(d => d.location)
+                  .filter(loc => !isDismissed(loc))
                   .filter(loc => !preferences.cities.some(c =>
                     c.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(c.toLowerCase())
                   ));
                 if (newLocations.length > 0) {
+                  // No toast: the places appear in the list right under the input
                   setPreferences(prev => ({ ...prev, cities: [...prev.cities, ...newLocations] }));
-                  toast({ title: `📍 Found ${newLocations.length} destination${newLocations.length > 1 ? 's' : ''}!`, description: newLocations.join(', ') });
                 } else {
                   toast({ title: "No locations identified", description: "Try a video with clearer landmarks or add cities manually" });
                 }
@@ -1442,22 +1523,11 @@ const Index = () => {
               }
             }}
           />
-
-          {/* Saved trips entry */}
-          <div className="flex justify-center pb-2">
-            <button
-              onClick={handleViewSavedTrips}
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Bookmark className="w-4 h-4" />
-              Saved trips
-            </button>
-          </div>
         </div>
       </main>
 
       <footer className="border-t border-border py-8">
-        <div className="container text-center text-sm text-muted-foreground">
+        <div className="container max-w-6xl text-sm text-muted-foreground">
           <p>Powered by AI. Made personally for you. For travelers everywhere.</p>
         </div>
       </footer>

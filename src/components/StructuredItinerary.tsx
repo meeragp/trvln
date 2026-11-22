@@ -15,18 +15,18 @@ import {
 type Tab = 'overview' | 'days' | 'bookings';
 
 const TAG_COLORS: Record<string, string> = {
-  transit: 'bg-gray-100 text-gray-600',
-  cultural: 'bg-purple-100 text-purple-700',
-  nature: 'bg-green-100 text-green-700',
-  hiking: 'bg-emerald-100 text-emerald-700',
-  beach: 'bg-sky-100 text-sky-700',
-  food: 'bg-orange-100 text-orange-700',
-  'photo-worthy': 'bg-pink-100 text-pink-700',
-  walking: 'bg-teal-100 text-teal-700',
-  adventure: 'bg-red-100 text-red-700',
-  relaxation: 'bg-blue-100 text-blue-700',
-  shopping: 'bg-amber-100 text-amber-700',
-  nightlife: 'bg-violet-100 text-violet-700',
+  transit: 'border border-border text-muted-foreground',
+  cultural: 'border border-border text-muted-foreground',
+  nature: 'bg-success-soft text-success',
+  hiking: 'bg-success-soft text-success',
+  beach: 'border border-border text-muted-foreground',
+  food: 'bg-warning-soft text-warning',
+  'photo-worthy': 'border border-border text-muted-foreground',
+  walking: 'border border-border text-muted-foreground',
+  adventure: 'bg-destructive-soft text-destructive',
+  relaxation: 'border border-border text-muted-foreground',
+  shopping: 'bg-warning-soft text-warning',
+  nightlife: 'border border-border text-muted-foreground',
 };
 
 const PERIOD_ICONS = { Morning: Sunrise, Afternoon: Sun, Evening: Moon };
@@ -236,7 +236,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
       {activeTab === 'overview' && (
         <div className="space-y-8">
           {/* Summary pills + destination */}
-          <div className="bg-gradient-to-br from-primary/10 to-transparent rounded-2xl p-5">
+          <div className="bg-accent rounded-2xl p-5">
             <div className="flex flex-wrap gap-2 mb-4">
               <span className="flex items-center gap-1.5 text-sm text-foreground bg-background/70 border border-border/60 rounded-full px-3 py-1">
                 <Clock className="w-3.5 h-3.5 text-muted-foreground" />
@@ -251,7 +251,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                 {data.summary.totalBudget}
               </span>
             </div>
-            <h2 className="text-3xl font-bold text-foreground leading-tight mb-2">
+            <h2 className="text-3xl text-foreground leading-tight mb-2">
               {data.summary.destination}
             </h2>
             {data.summary.bestTimeNote && (
@@ -265,7 +265,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           <div className="space-y-3">
             {data.summary.highlights.map((h, i) => (
               <div key={i} className="flex items-start gap-3">
-                <span className="text-primary font-bold text-base mt-0.5 leading-none">+</span>
+                <span className="text-foreground font-bold text-base mt-0.5 leading-none">+</span>
                 <p className="text-sm text-foreground leading-relaxed">{h}</p>
               </div>
             ))}
@@ -275,7 +275,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {!data.flights.skip && data.flights.options.length > 0 && (
             <div>
               <h4 className="flex items-center gap-2 text-base font-bold text-foreground mb-1">
-                <Plane className="w-4 h-4 text-primary" />
+                <Plane className="w-4 h-4 text-foreground" />
                 Getting there
               </h4>
               {data.flights.context && (
@@ -323,9 +323,9 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                         <>
                           <div className="flex-1">
                             <p className="text-sm font-medium text-foreground">{f.description}</p>
-                            <p className="text-sm font-semibold text-primary mt-0.5">{f.price}</p>
+                            <p className="text-sm font-semibold text-foreground mt-0.5">{f.price}</p>
                           </div>
-                          <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0 mt-0.5" />
+                          <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 mt-0.5" />
                         </>
                       )}
                     </a>
@@ -338,7 +338,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {/* Budget breakdown */}
           <div>
             <h4 className="flex items-center gap-2 text-base font-bold text-foreground mb-4">
-              <DollarSign className="w-4 h-4 text-primary" />
+              <DollarSign className="w-4 h-4 text-foreground" />
               Budget breakdown
             </h4>
             <div>
@@ -359,7 +359,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
               <div className="border-t border-foreground/15" />
               <div className="flex items-center justify-between pt-3">
                 <span className="text-sm font-bold text-foreground">Total estimate</span>
-                <span className="text-sm font-bold text-primary">{data.budget.total}</span>
+                <span className="text-sm font-bold text-foreground">{data.budget.total}</span>
               </div>
             </div>
           </div>
@@ -368,7 +368,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {data.accommodation.length > 0 && (
             <div>
               <h4 className="flex items-center gap-2 text-base font-bold text-foreground mb-4">
-                <Hotel className="w-4 h-4 text-primary" />
+                <Hotel className="w-4 h-4 text-foreground" />
                 Accommodation
               </h4>
               <div className="space-y-4">
@@ -376,7 +376,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                   <div key={i}>
                     <div className="flex items-center gap-1.5 mb-2">
                       <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      <span className="text-xs font-medium text-muted-foreground">
                         {loc.location} · {loc.nights} night{loc.nights !== 1 ? 's' : ''}
                       </span>
                     </div>
@@ -394,7 +394,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="text-sm font-medium text-foreground">{opt.name}</p>
                                 {opt.isPrimary && (
-                                  <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-medium">
+                                  <span className="text-[10px] bg-foreground text-background px-1.5 py-0.5 rounded-full font-medium">
                                     Recommended
                                   </span>
                                 )}
@@ -409,11 +409,11 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                               )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-sm font-semibold text-primary whitespace-nowrap">
+                              <span className="text-sm font-semibold text-foreground whitespace-nowrap">
                                 {opt.pricePerNight}
                                 <span className="text-xs font-normal text-muted-foreground">/night</span>
                               </span>
-                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
                             </div>
                           </div>
                         </a>
@@ -428,7 +428,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {/* Alternatives */}
           {data.alternatives && data.alternatives.length > 0 && (
             <div>
-              <h4 className="text-sm font-semibold text-foreground mb-3">Also Consider</h4>
+              <h4 className="text-sm font-semibold text-foreground mb-3">Also consider</h4>
               <div className="space-y-2">
                 {data.alternatives.map((alt, i) => {
                   const inner = (
@@ -462,14 +462,14 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
 
           {/* Assumptions */}
           {data.summary.assumptions && data.summary.assumptions.length > 0 && (
-            <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 rounded-xl p-4">
+            <div className="bg-warning-soft border border-warning/30 rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
-                <Info className="w-3.5 h-3.5 text-amber-600" />
-                <span className="text-xs font-semibold text-amber-800 dark:text-amber-400 uppercase tracking-wide">Assumptions</span>
+                <Info className="w-3.5 h-3.5 text-warning" />
+                <span className="text-xs font-semibold text-warning">Assumptions</span>
               </div>
               <ul className="space-y-1">
                 {data.summary.assumptions.map((a, i) => (
-                  <li key={i} className="text-sm text-amber-700 dark:text-amber-400">• {a}</li>
+                  <li key={i} className="text-sm text-warning">• {a}</li>
                 ))}
               </ul>
             </div>
@@ -484,7 +484,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
               <details className="group rounded-xl border border-border/40 bg-muted/20 p-4">
                 <summary className="flex cursor-pointer items-center gap-2 list-none">
                   <Info className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sources</span>
+                  <span className="text-xs font-semibold text-muted-foreground">Sources</span>
                   <span className="text-xs text-muted-foreground/70">
                     {total} link{total === 1 ? '' : 's'} behind this plan
                   </span>
@@ -530,11 +530,11 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                 className={cn(
                   "flex flex-col items-center px-3.5 py-2 rounded-xl text-xs font-medium transition-all shrink-0 border",
                   activeDayIdx === i
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                    ? "bg-foreground text-background border-foreground"
                     : "bg-muted/20 text-muted-foreground hover:bg-muted/40 border-transparent"
                 )}
               >
-                <span className="text-[9px] uppercase tracking-wider opacity-70 mb-0.5">Day</span>
+                <span className="text-[9px]r opacity-70 mb-0.5">Day</span>
                 <span className="flex items-center gap-1 text-base font-bold leading-none">
                   {day.dayNumber}
                   {day.locked && <Lock className="w-3 h-3 opacity-70" />}
@@ -545,11 +545,11 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
 
           {/* Day header card */}
           {activeDay && (
-            <div className="bg-gradient-to-br from-primary/10 to-transparent rounded-2xl p-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-widest mb-1">
+            <div className="bg-accent rounded-2xl p-4">
+              <p className="text-xs text-muted-foregroundst mb-1">
                 Day {activeDay.dayNumber}
               </p>
-              <h3 className="text-lg font-display font-bold text-foreground">{activeDay.title}</h3>
+              <h3 className="text-lg font-display text-foreground">{activeDay.title}</h3>
               <div className="flex items-center gap-1.5 mt-1">
                 <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">{activeDay.location}</span>
@@ -560,7 +560,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                 </p>
               )}
               {activeDay.transitNote && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs text-primary font-medium">
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                   <ChevronRight className="w-3.5 h-3.5" />
                   {activeDay.transitNote}
                 </div>
@@ -633,9 +633,9 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                     key={actIdx}
                     className={cn(
                       "group bg-card border rounded-2xl p-4 transition-all",
-                      fb.vote === 'up' && "border-green-200 bg-green-50/30",
-                      fb.vote === 'down' && !fb.updatedDescription && "border-red-200 bg-red-50/20",
-                      fb.updatedDescription && "border-green-200 bg-green-50/30",
+                      fb.vote === 'up' && "border-success/30 bg-success-soft",
+                      fb.vote === 'down' && !fb.updatedDescription && "border-destructive/30 bg-destructive-soft",
+                      fb.updatedDescription && "border-success/30 bg-success-soft",
                       !fb.vote && "border-border/60"
                     )}
                   >
@@ -652,8 +652,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                           className={cn(
                             "p-1.5 rounded-lg transition-colors",
                             fb.vote === 'up'
-                              ? "bg-green-100 text-green-600"
-                              : "text-muted-foreground hover:text-green-600 hover:bg-green-50"
+                              ? "bg-success-soft text-success"
+                              : "text-muted-foreground hover:text-success hover:bg-success-soft"
                           )}
                           title="Keep this"
                         >
@@ -665,8 +665,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                           className={cn(
                             "p-1.5 rounded-lg transition-colors",
                             fb.vote === 'down'
-                              ? "bg-red-100 text-red-600"
-                              : "text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                              ? "bg-destructive-soft text-destructive"
+                              : "text-muted-foreground hover:text-destructive hover:bg-destructive-soft"
                           )}
                           title="Suggest change"
                         >
@@ -678,8 +678,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                           className={cn(
                             "p-1.5 rounded-lg transition-colors",
                             isOpen && !fb.vote
-                              ? "bg-blue-100 text-blue-600"
-                              : "text-muted-foreground hover:text-blue-600 hover:bg-blue-50"
+                              ? "bg-foreground text-background"
+                              : "text-muted-foreground hover:text-foreground hover:bg-accent"
                           )}
                           title="Request a change"
                         >
@@ -691,7 +691,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                             href={activity.bookingUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            className="p-1.5 rounded-lg bg-accent text-foreground hover:bg-muted transition-colors"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
@@ -705,7 +705,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                     )}>
                       {description}
                       {fb.updatedDescription && (
-                        <span className="ml-1.5 text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium align-middle">
+                        <span className="ml-1.5 text-[10px] bg-success-soft text-success px-1.5 py-0.5 rounded-full font-medium align-middle">
                           updated
                         </span>
                       )}
@@ -720,7 +720,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                         </span>
                       )}
                       {activity.cost === 'Free' ? (
-                        <span className="text-xs text-green-700 bg-green-100 px-2 py-0.5 rounded-full font-medium">Free</span>
+                        <span className="text-xs text-success bg-success-soft px-2 py-0.5 rounded-full font-medium">Free</span>
                       ) : activity.cost ? (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground bg-muted/20 px-2 py-0.5 rounded-full">
                           <DollarSign className="w-3 h-3" />
@@ -730,7 +730,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                       {activity.tags?.map(tag => (
                         <span
                           key={tag}
-                          className={cn("text-xs px-2 py-0.5 rounded-full", TAG_COLORS[tag] || 'bg-gray-100 text-gray-600')}
+                          className={cn("text-xs px-2 py-0.5 rounded-full", TAG_COLORS[tag] || 'border border-border text-muted-foreground')}
                         >
                           {tag}
                         </span>
@@ -790,8 +790,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
               {activePeriod.dining && activePeriod.dining.length > 0 && (
                 <div className="mt-2">
                   <div className="flex items-center gap-2 mb-2 px-1">
-                    <Utensils className="w-3.5 h-3.5 text-orange-500" />
-                    <span className="text-xs font-semibold text-foreground uppercase tracking-wide">Dining nearby</span>
+                    <Utensils className="w-3.5 h-3.5 text-warning" />
+                    <span className="text-xs font-semibold text-foreground">Dining nearby</span>
                   </div>
                   <div className="space-y-2">
                     {activePeriod.dining.map((dining, i) => {
@@ -808,9 +808,9 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                           className={cn(
                             "group p-3 rounded-xl border transition-colors",
                             fb.updatedDescription
-                              ? "border-green-200 bg-green-50/30"
+                              ? "border-success/30 bg-success-soft"
                               : dining.isPrimary !== false
-                                ? "border-orange-300 dark:border-orange-700"
+                                ? "border-warning/30"
                                 : "border-border"
                           )}
                         >
@@ -819,19 +819,19 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="text-sm font-medium text-foreground">{displayName}</p>
                                 {dining.isPrimary !== false && (
-                                  <span className="text-[10px] bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-400 px-1.5 py-0.5 rounded-full font-medium">
+                                  <span className="text-[10px] bg-warning-soft text-warning px-1.5 py-0.5 rounded-full font-medium">
                                     Top pick
                                   </span>
                                 )}
                                 {fb.updatedDescription && (
-                                  <span className="text-[10px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">
+                                  <span className="text-[10px] bg-success-soft text-success px-1.5 py-0.5 rounded-full font-medium">
                                     updated
                                   </span>
                                 )}
                               </div>
                               <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{description}</p>
                               {dining.priceRange && (
-                                <p className="text-xs text-orange-600 font-medium mt-0.5">{dining.priceRange}</p>
+                                <p className="text-xs text-warning font-medium mt-0.5">{dining.priceRange}</p>
                               )}
                             </div>
                             <div className={cn(
@@ -843,8 +843,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                                 className={cn(
                                   "p-1.5 rounded-lg transition-colors",
                                   fb.vote === 'up'
-                                    ? "bg-green-100 text-green-600"
-                                    : "text-muted-foreground hover:text-green-600 hover:bg-green-50"
+                                    ? "bg-success-soft text-success"
+                                    : "text-muted-foreground hover:text-success hover:bg-success-soft"
                                 )}
                                 title="Keep this"
                               >
@@ -855,8 +855,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                                 className={cn(
                                   "p-1.5 rounded-lg transition-colors",
                                   fb.vote === 'down'
-                                    ? "bg-red-100 text-red-600"
-                                    : "text-muted-foreground hover:text-red-600 hover:bg-red-50"
+                                    ? "bg-destructive-soft text-destructive"
+                                    : "text-muted-foreground hover:text-destructive hover:bg-destructive-soft"
                                 )}
                                 title="Suggest another"
                               >
@@ -868,8 +868,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                                 className={cn(
                                   "p-1.5 rounded-lg transition-colors",
                                   isOpen && !fb.vote
-                                    ? "bg-blue-100 text-blue-600"
-                                    : "text-muted-foreground hover:text-blue-600 hover:bg-blue-50"
+                                    ? "bg-foreground text-background"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
                                 )}
                                 title="Request a change"
                               >
@@ -880,7 +880,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                                   href={dining.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="p-1.5 rounded-lg bg-orange-100/70 text-orange-600 hover:bg-orange-100 transition-colors"
+                                  className="p-1.5 rounded-lg bg-warning-soft text-warning hover:bg-warning-soft transition-colors"
                                 >
                                   <ExternalLink className="w-3.5 h-3.5" />
                                 </a>
@@ -939,10 +939,10 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
             <p className="text-sm text-muted-foreground text-center py-6">No booking items generated.</p>
           )}
           {([
-            { key: 'high', label: 'Book first', emoji: '🔴' },
-            { key: 'medium', label: 'Book soon', emoji: '🟡' },
-            { key: 'low', label: 'Book anytime', emoji: '🟢' },
-          ] as const).map(({ key, label, emoji }) => {
+            { key: 'high', label: 'Book first', dot: 'bg-destructive' },
+            { key: 'medium', label: 'Book soon', dot: 'bg-marigold' },
+            { key: 'low', label: 'Book anytime', dot: 'bg-success' },
+          ] as const).map(({ key, label, dot }) => {
             const items = data.bookingChecklist.filter(b => b.priority === key);
             // Locked items were counted server-side but never shipped; render
             // sized placeholders under the group header instead.
@@ -950,8 +950,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
             if (items.length === 0 && lockedCount === 0) return null;
             return (
               <div key={key}>
-                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 px-1 flex items-center gap-1.5">
-                  <span className="text-[10px]">{emoji}</span>
+                <h4 className="text-xs font-semibold text-muted-foreground mb-2 px-1 flex items-center gap-1.5">
+                  <span aria-hidden="true" className={cn("h-2 w-2 shrink-0", dot)} />
                   {label}
                 </h4>
                 <div className="space-y-2">

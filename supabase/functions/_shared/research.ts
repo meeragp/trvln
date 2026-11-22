@@ -352,7 +352,7 @@ export async function readTrip(args: {
   const {
     cities, noFlight, departureCity, atmosphere, adventureLevel, foodDrink, interests, additionalNotes,
   } = args.preferences;
-  const { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel } = args.trip;
+  const { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel, travelersLabel } = args.trip;
   const themeVariant = args.themeName ? { name: args.themeName } : undefined;
   const ANTHROPIC_API_KEY = args.anthropicKey;
   const { costs, timePhase } = args;
@@ -390,6 +390,7 @@ Three things:
 
 The traveler's request:
 - What they described: ${additionalNotes || "Not specified"}
+- Traveling as: ${travelersLabel}
 - Atmosphere: ${atmosphere?.join(", ") || "no preference"}
 - Interests (ranked): ${interests?.join(" > ") || "no preference"}
 - Adventure level: ${adventureLevel || "no preference"}
@@ -482,6 +483,7 @@ Pick the unit that matches how the trip actually moves:
 
 Preferences:
 - What they described: ${additionalNotes || "Not specified"}
+- Traveling as: ${travelersLabel}
 - Atmosphere: ${atmosphere?.join(", ") || "no preference"}
 - Interests: ${interests?.join(", ") || "no preference"}
 - Adventure level: ${adventureLevel || "active"}

@@ -15,6 +15,8 @@ export function UserMenu() {
   const { user, signOut, loading } = useAuth();
   const { hasPurchased, balance } = useEntitlements();
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const name: string = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || '';
+  const initial = name.trim().charAt(0).toUpperCase();
 
   if (loading) {
     return (
@@ -40,10 +42,11 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full">
-          <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-            <User className="w-4 h-4 text-primary" />
-          </div>
+        <Button variant="ghost" size="icon" className="h-11 w-11 rounded-full" aria-label="Account">
+          {/* An ink disc with their initial, like the selected options */}
+          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground font-display text-lg leading-none text-background">
+            {initial || <User className="h-4 w-4" />}
+          </span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
@@ -52,7 +55,7 @@ export function UserMenu() {
         </div>
         {hasPurchased && (
           <div className="px-2 py-1.5 text-sm flex items-center gap-2 text-foreground">
-            <Ticket className="w-4 h-4 text-primary" />
+            <Ticket className="w-4 h-4 text-foreground" />
             {balance === 1 ? '1 trip left' : `${balance} trips left`}
           </div>
         )}

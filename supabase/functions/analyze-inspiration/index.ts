@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { CostTracker, persistCost } from "../_shared/costs.ts";
 import { callGeminiWithFallback, type GeminiFailureKind } from "../_shared/gemini.ts";
+import { sanitizeVibe, VIBE_OPTIONS } from "../_shared/vibe.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,6 +76,13 @@ IMPORTANT GUIDELINES:
 - If you cannot identify a location, say so honestly
 - Look for visual cues: architecture, signage, landscapes, famous landmarks, street styles
 
+Then, looking at all the images together, read what kind of trip this person is drawn to. This pre-fills a preferences form they can correct, so only include a value the images clearly support, and leave the rest empty:
+- "summary": at most 10 words, lower case, naming what is actually shown (e.g. "coastal hikes, seafood, small towns")
+- "atmosphere": any of ${JSON.stringify(VIBE_OPTIONS.atmosphere)}
+- "adventureLevel": one of ${JSON.stringify(VIBE_OPTIONS.adventureLevel)} ("none" means relaxed), or null if the images don't say
+- "foodDrink": any of ${JSON.stringify(VIBE_OPTIONS.foodDrink)}
+- "interests": any of ${JSON.stringify(VIBE_OPTIONS.interests)} ("instagram" means photo spots, "activities" means adventures)
+
 Return a JSON object with this exact structure:
 {
   "destinations": [
@@ -83,11 +91,17 @@ Return a JSON object with this exact structure:
       "confidence": "high" | "medium" | "low",
       "reasoning": "Brief explanation of how you identified this location"
     }
-  ]
+  ],
+  "vibe": {
+    "summary": "...",
+    "atmosphere": [],
+    "adventureLevel": null,
+    "foodDrink": [],
+    "interests": []
+  }
 }
 
-If no locations can be identified from any images, return:
-{ "destinations": [] }`;
+If no locations can be identified from any images, return an empty "destinations" array. The vibe can still be filled in.`;
 
     // Build the content array with all images
     const content: any[] = [
@@ -171,8 +185,11 @@ If no locations can be identified from any images, return:
     const destinations = parsed.destinations || [];
     console.log(`Identified ${destinations.length} destination(s):`, destinations);
 
+    // Older clients ignore this field; newer ones use it to pre-fill the Vibe step
+    const vibe = sanitizeVibe(parsed.vibe);
+
     return new Response(
-      JSON.stringify({ destinations, model: result.model }),
+      JSON.stringify({ destinations, vibe, model: result.model }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

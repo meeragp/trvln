@@ -41,6 +41,7 @@ const trip: TripContext = {
   durationContext: "7 day trip",
   dateContext: "Target: July",
   guidedLabel: "Self-guided only - no guided tours, DIY everything",
+  travelersLabel: "A couple",
 };
 
 const reading: TripReading = {

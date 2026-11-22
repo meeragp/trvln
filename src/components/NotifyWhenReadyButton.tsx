@@ -82,8 +82,8 @@ export function NotifyWhenReadyButton({ className }: NotifyWhenReadyButtonProps)
         className={cn(
           "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-colors",
           enabled
-            ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/15"
-            : "border-border bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-primary",
+            ? "border-foreground bg-foreground text-background hover:bg-foreground/90"
+            : "border-border bg-background/60 text-muted-foreground hover:border-foreground hover:text-foreground",
           className
         )}
       >

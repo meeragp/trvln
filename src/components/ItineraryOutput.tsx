@@ -775,7 +775,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         onClick={() => (isPreview && onUnlockRequest ? onUnlockRequest() : setEditMode(v => !v))}
         aria-label="Edit the itinerary"
         title="Edit the itinerary"
-        className="group flex items-center justify-center h-9 w-9 hover:w-auto px-0 hover:px-3.5 rounded-full border border-border bg-background text-muted-foreground hover:text-primary hover:border-primary transition-all duration-300 overflow-hidden"
+        className="group flex items-center justify-center h-9 w-9 hover:w-auto px-0 hover:px-3.5 rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground transition-all duration-300 overflow-hidden"
       >
         <MessagesSquare className="w-4 h-4 shrink-0" />
         <span className="max-w-0 group-hover:max-w-[160px] group-hover:ml-2 overflow-hidden whitespace-nowrap text-sm font-semibold transition-all duration-300">
@@ -822,7 +822,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
       <div className="space-y-5">
         {isEditing && (
           <div className="flex items-center justify-center gap-3 py-4 text-muted-foreground bg-muted/30 rounded-xl">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             <span className="text-sm font-medium">Applying changes...</span>
           </div>
         )}
@@ -864,10 +864,10 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
       return (
         <div key={item.id} className="mt-8 mb-4 first:mt-0 pl-2">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-2xl font-bold text-primary">{dayNumber}</span>
+            <div className="w-14 h-14 rounded-full bg-accent text-foreground flex items-center justify-center">
+              <span className="font-display text-3xl leading-none text-foreground">{dayNumber}</span>
             </div>
-            <h3 className="font-display font-bold text-foreground text-xl">
+            <h3 className="font-display text-foreground text-xl">
               {parseInlineContent(trimmedLine.replace(/^#+\s*/, ''))}
             </h3>
           </div>
@@ -918,13 +918,13 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
           className={cn(
             "flex items-start gap-3 py-2 group hover:bg-muted/30 px-3 rounded-lg transition-all relative",
             item.isUpdating && "opacity-60",
-            isNearMissItem && "bg-amber-500/5 border-l-2 border-amber-500/30"
+            isNearMissItem && "bg-warning-soft border-l-2 border-warning/30"
           )}
           style={{ marginLeft: `${marginLeft}rem` }}
         >
           <div className={cn(
             "rounded-full mt-2 shrink-0",
-            indentLevel === 0 ? "w-2 h-2 bg-primary/60" : "w-1.5 h-1.5 bg-muted-foreground/40"
+            indentLevel === 0 ? "w-2 h-2 bg-foreground/50" : "w-1.5 h-1.5 bg-muted-foreground/40"
           )} />
           <div className="flex-1 min-w-0">
             <p className="text-foreground/90 leading-relaxed">{parsedContent}</p>
@@ -939,7 +939,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
             <Button
               variant="ghost"
               size="sm"
-              className="shrink-0 h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity bg-amber-500/10 hover:bg-amber-500/20 text-amber-700"
+              className="shrink-0 h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity bg-warning-soft hover:bg-warning-soft text-warning"
               onClick={() => handleAddNearMiss(item)}
               disabled={addingNearMiss === item.id}
             >
@@ -979,7 +979,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         key={item.id}
         className="flex items-start gap-3 py-2 px-3 pl-5"
       >
-        <div className="w-2 h-2 rounded-full mt-2 shrink-0 bg-primary/60" />
+        <div className="w-2 h-2 rounded-full mt-2 shrink-0 bg-foreground/50" />
         <p className="text-foreground/90 leading-relaxed">
           {parseInlineContent(trimmedLine.replace(/^#+\s*/, ''))}
         </p>
@@ -1120,11 +1120,11 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
             "rounded-xl px-3 py-1 transition-colors group",
             "hover:bg-muted/30",
             parent.isUpdating && "opacity-60",
-            isNearMissItem && "bg-amber-500/5 border-l-2 border-amber-500/30"
+            isNearMissItem && "bg-warning-soft border-l-2 border-warning/30"
           )}
         >
           <div className="flex items-start gap-3 py-1.5">
-            <div className="w-2 h-2 rounded-full mt-2.5 shrink-0 bg-primary/60" />
+            <div className="w-2 h-2 rounded-full mt-2.5 shrink-0 bg-foreground/50" />
             <div className="flex-1 min-w-0">
               <p className={cn("text-foreground/90 leading-relaxed", compact && "text-sm")}>
                 {parseInlineContent(parentContent)}
@@ -1140,7 +1140,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity bg-amber-500/10 hover:bg-amber-500/20 text-amber-700"
+                  className="h-7 px-2 opacity-0 group-hover:opacity-100 transition-opacity bg-warning-soft hover:bg-warning-soft text-warning"
                   onClick={() => handleAddNearMiss(parent)}
                   disabled={addingNearMiss === parent.id}
                 >
@@ -1186,7 +1186,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         .trim();
       return (
         <div key={entry.title.id} className="rounded-xl border border-muted/40 px-1 py-2 space-y-0.5">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 pb-1">
+          <p className="text-xs font-semibold text-muted-foregroundr px-3 pb-1">
             {parseInlineContent(titleText)}
           </p>
           {entry.entries.map(subEntry => {
@@ -1203,7 +1203,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
     <div className="space-y-6">
       {/* Header with Export button */}
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-display font-bold text-foreground">Your Itinerary</h2>
+        <h2 className="text-2xl font-display text-foreground">Your Itinerary</h2>
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
@@ -1276,7 +1276,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         {isEditing && (
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex items-center justify-center rounded-lg z-10">
             <div className="flex items-center gap-3 text-muted-foreground bg-card px-4 py-3 rounded-lg shadow-medium">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               <span className="font-medium">Applying changes...</span>
             </div>
           </div>
@@ -1300,7 +1300,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
               >
                 <CollapsibleTrigger className="w-full">
                   <div className="flex items-center justify-between py-3 px-4 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors cursor-pointer">
-                    <h2 className="text-lg font-display font-bold text-foreground tracking-wide">
+                    <h2 className="text-lg font-display text-foreground">
                       {section.header}
                     </h2>
                     <ChevronDown 

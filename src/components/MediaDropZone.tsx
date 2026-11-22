@@ -410,7 +410,7 @@ export const MediaDropZone = forwardRef<MediaDropZoneHandle, MediaDropZoneProps 
             "w-16 h-16 rounded-full flex items-center justify-center transition-all duration-300",
             isDragging
               ? "bg-primary text-primary-foreground"
-              : "bg-muted text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary"
+              : "bg-muted text-muted-foreground group-hover:bg-accent group-hover:text-foreground"
           )}>
             <Upload className="w-7 h-7" />
           </div>
@@ -501,7 +501,7 @@ export const MediaDropZone = forwardRef<MediaDropZoneHandle, MediaDropZoneProps 
               {/* Upload overlay */}
               {item.uploading && (
                 <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                 </div>
               )}
 

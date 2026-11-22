@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Sparkles, ExternalLink, ChevronDown } from "lucide-react";
+import { ExternalLink, ChevronDown } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 
@@ -194,7 +194,7 @@ export default function SharedItinerary() {
     if (item.type === 'day-header' || item.type === 'section-header' || isSectionHeader(trimmedLine)) {
       return (
         <div key={item.id} className="mt-6 mb-3 first:mt-0">
-          <h3 className="text-lg font-semibold text-foreground">
+          <h3 className="text-lg text-foreground">
             {parseInlineContent(trimmedLine.replace(/^#+\s*/, ''))}
           </h3>
         </div>
@@ -204,7 +204,7 @@ export default function SharedItinerary() {
     if (item.type === 'subheader' || isSubHeader(trimmedLine)) {
       return (
         <div key={item.id} className="mt-5 mb-2">
-          <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
+          <span className="text-sm font-semibold text-muted-foreground">
             {parseInlineContent(trimmedLine.replace(/^\*\*|\*\*$/g, ''))}
           </span>
         </div>
@@ -258,7 +258,7 @@ export default function SharedItinerary() {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-display font-bold text-foreground mb-2">No Itinerary Found</h1>
+          <h1 className="text-4xl font-display text-foreground mb-2">No itinerary here</h1>
           <p className="text-muted-foreground">The itinerary data could not be loaded.</p>
         </div>
       </div>
@@ -270,10 +270,10 @@ export default function SharedItinerary() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-primary" />
+            <div className="w-10 h-10 flex items-center justify-center">
+              <img src="/favicon.svg" alt="" className="w-8 h-8" />
             </div>
-            <h1 className="text-2xl font-display font-bold text-foreground">
+            <h1 className="text-2xl font-display text-foreground">
               Your Itinerary
             </h1>
           </div>
@@ -296,8 +296,8 @@ export default function SharedItinerary() {
                 onOpenChange={() => toggleSection(section.header)}
               >
                 <CollapsibleTrigger className="w-full">
-                  <div className="flex items-center justify-between py-3 px-4 bg-muted/50 rounded-lg hover:bg-muted/70 transition-colors cursor-pointer">
-                    <h2 className="text-lg font-display font-bold text-foreground tracking-wide">
+                  <div className="flex items-center justify-between py-3 border-t border-foreground hover:text-primary transition-colors cursor-pointer">
+                    <h2 className="text-lg font-display text-foreground">
                       {section.header}
                     </h2>
                     <ChevronDown 

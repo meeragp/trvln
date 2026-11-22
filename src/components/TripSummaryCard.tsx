@@ -35,10 +35,10 @@ export function TripSummaryCard({ data, departureCity, startDate, endDate, durat
   };
 
   return (
-    <Card className="p-6 bg-gradient-to-br from-primary/5 via-background to-background border-primary/20">
+    <Card className="p-6 bg-card border-border">
       <div className="flex items-center gap-2 mb-4">
-        <Sparkles className="w-5 h-5 text-primary" />
-        <h3 className="font-display text-lg font-semibold text-foreground">Trip at a Glance</h3>
+        <Sparkles className="w-5 h-5 text-foreground" />
+        <h3 className="font-display text-lg text-foreground">Trip at a glance</h3>
       </div>
       
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

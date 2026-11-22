@@ -30,6 +30,8 @@ export const PreferencesSchema = z.object({
   foodDrink: z.array(z.string().max(50)).max(10).default([]),
   interests: z.array(z.string().max(50)).max(20).default([]),
   additionalNotes: z.string().max(5000).default(''),
+  // Who is travelling: 'solo' | 'couple' | 'friends' | 'family', or '' when not said
+  travelers: z.string().max(50).default(''),
 });
 
 export type TripPreferences = z.infer<typeof PreferencesSchema>;
@@ -45,6 +47,7 @@ export type TripContext = {
   durationContext: string;
   dateContext: string;
   guidedLabel: string;
+  travelersLabel: string;
 };
 
 export function describeTrip(preferences: TripPreferences): TripContext {
@@ -59,6 +62,7 @@ export function describeTrip(preferences: TripPreferences): TripContext {
     durationFlexibility,
     durationDays,
     guidedPreference,
+    travelers,
   } = preferences;
 
   // Build budget context
@@ -165,5 +169,14 @@ export function describeTrip(preferences: TripPreferences): TripContext {
   };
   const guidedLabel = guidedLabels[guidedPreference as string] || 'No preference';
 
-  return { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel };
+  // Who is travelling changes rooms, pace and where dinner makes sense
+  const travelersLabels: Record<string, string> = {
+    'solo': 'Solo traveler',
+    'couple': 'A couple',
+    'friends': 'A group of friends',
+    'family': 'A family with kids',
+  };
+  const travelersLabel = travelersLabels[travelers as string] || 'Not specified';
+
+  return { budgetInfo, flightBudget, durationContext, dateContext, guidedLabel, travelersLabel };
 }

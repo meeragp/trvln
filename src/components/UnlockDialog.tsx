@@ -22,7 +22,7 @@ export function UnlockDialog({ open, onOpenChange, onUnlock, loading }: UnlockDi
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader className="text-center">
-          <DialogTitle className="text-xl font-display bg-gradient-to-r from-foreground via-primary to-foreground bg-clip-text text-transparent">
+          <DialogTitle className="text-xl font-display font-normal text-foreground">
             Unlock your full trip
           </DialogTitle>
           <DialogDescription>
@@ -34,7 +34,7 @@ export function UnlockDialog({ open, onOpenChange, onUnlock, loading }: UnlockDi
           <ul className="space-y-2.5">
             {INCLUDED.map(line => (
               <li key={line} className="flex items-start gap-2.5 text-sm text-foreground">
-                <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                <Check className="w-4 h-4 text-foreground shrink-0 mt-0.5" />
                 <span className={line.startsWith("Plus") ? "font-semibold" : undefined}>{line}</span>
               </li>
             ))}
