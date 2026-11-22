@@ -168,6 +168,10 @@ export type DiningPlace = {
   address: string;
   mapsUrl: string;
   wellKnown?: boolean; // set at selection: heavily-trafficked pick vs quieter find
+  // Location bills below the tier this mask already pays for, so it is free:
+  // it lets the day map pin a meal assigned from this list without a second
+  // lookup.
+  coords?: { lat: number; lng: number; placeId?: string };
 };
 export type CityDining = { city: string; meals: Record<string, DiningPlace[]> };
 
@@ -218,7 +222,7 @@ async function placesTextSearch(textQuery: string, apiKey: string): Promise<Dini
         "Content-Type": "application/json",
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask":
-          "places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.businessStatus,places.shortFormattedAddress,places.googleMapsUri",
+          "places.id,places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.businessStatus,places.shortFormattedAddress,places.googleMapsUri,places.location",
       },
       // The API's maximum page: the quieter-find pool selects from below the
       // top of the ranking, so the deeper the page, the more there is to find.
@@ -231,6 +235,8 @@ async function placesTextSearch(textQuery: string, apiKey: string): Promise<Dini
     }
     const data = await response.json();
     type RawPlace = {
+      id?: unknown;
+      location?: { latitude?: unknown; longitude?: unknown };
       displayName?: { text?: unknown };
       rating?: unknown;
       userRatingCount?: unknown;
@@ -249,6 +255,15 @@ async function placesTextSearch(textQuery: string, apiKey: string): Promise<Dini
         price: PRICE_LEVEL_LABEL[String(p.priceLevel ?? "")] ?? "",
         address: typeof p.shortFormattedAddress === "string" ? p.shortFormattedAddress : "",
         mapsUrl: typeof p.googleMapsUri === "string" ? p.googleMapsUri : "",
+        ...(typeof p.location?.latitude === "number" && typeof p.location?.longitude === "number"
+          ? {
+            coords: {
+              lat: p.location.latitude,
+              lng: p.location.longitude,
+              ...(typeof p.id === "string" ? { placeId: p.id } : {}),
+            },
+          }
+          : {}),
       }))
       .filter(p => p.name);
   } catch (error) {
