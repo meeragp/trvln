@@ -52,9 +52,9 @@ export function ItemFeedbackControls({
 
   if (item.isUpdating) {
     return (
-      <div className="flex items-center gap-2 px-2 py-1 bg-primary/10 rounded-lg">
-        <Loader2 className="w-3 h-3 animate-spin text-primary" />
-        <span className="text-xs text-primary">Updating...</span>
+      <div className="flex items-center gap-2 px-2 py-1 bg-accent rounded-lg">
+        <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+        <span className="text-xs text-foreground">Updating...</span>
       </div>
     );
   }
@@ -112,7 +112,7 @@ export function ItemFeedbackControls({
             size="sm"
             className={cn(
               "h-7 w-7 p-0 rounded-full",
-              item.comment && "bg-primary/10 text-primary"
+              item.comment && "bg-foreground text-background"
             )}
             title="Add note"
           >

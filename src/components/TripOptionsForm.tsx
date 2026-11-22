@@ -99,7 +99,7 @@ export function TripOptionsForm({
             {/* Flight Preferences Section */}
             <div className="p-4 bg-muted/50 rounded-lg space-y-4">
               <h4 className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Plane className="w-4 h-4 text-primary" />
+                <Plane className="w-4 h-4 text-foreground" />
                 Flight Preferences
               </h4>
               
@@ -138,7 +138,7 @@ export function TripOptionsForm({
             {/* Duration Range */}
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Clock className="w-4 h-4 text-primary" />
+                <Clock className="w-4 h-4 text-foreground" />
                 Trip Duration Range
               </label>
               <div className="space-y-2">
@@ -161,7 +161,7 @@ export function TripOptionsForm({
               {/* Start Date */}
               <div className="space-y-3">
                 <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Calendar className="w-4 h-4 text-primary" />
+                  <Calendar className="w-4 h-4 text-foreground" />
                   Start Date
                 </label>
                 <div className="flex items-center gap-2">
@@ -218,7 +218,7 @@ export function TripOptionsForm({
               {/* End Date */}
               <div className="space-y-3">
                 <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                  <Calendar className="w-4 h-4 text-primary" />
+                  <Calendar className="w-4 h-4 text-foreground" />
                   End Date
                 </label>
                 <div className="flex items-center gap-2">
@@ -276,7 +276,7 @@ export function TripOptionsForm({
             {/* Budget */}
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-sm font-medium text-foreground">
-                <Wallet className="w-4 h-4 text-primary" />
+                <Wallet className="w-4 h-4 text-foreground" />
                 Accommodation Budget (per night)
               </label>
               <div className="space-y-2">

@@ -775,7 +775,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         onClick={() => (isPreview && onUnlockRequest ? onUnlockRequest() : setEditMode(v => !v))}
         aria-label="Edit the itinerary"
         title="Edit the itinerary"
-        className="group flex items-center justify-center h-9 w-9 hover:w-auto px-0 hover:px-3.5 rounded-full border border-border bg-background text-muted-foreground hover:text-primary hover:border-primary transition-all duration-300 overflow-hidden"
+        className="group flex items-center justify-center h-9 w-9 hover:w-auto px-0 hover:px-3.5 rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:border-foreground transition-all duration-300 overflow-hidden"
       >
         <MessagesSquare className="w-4 h-4 shrink-0" />
         <span className="max-w-0 group-hover:max-w-[160px] group-hover:ml-2 overflow-hidden whitespace-nowrap text-sm font-semibold transition-all duration-300">
@@ -822,7 +822,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
       <div className="space-y-5">
         {isEditing && (
           <div className="flex items-center justify-center gap-3 py-4 text-muted-foreground bg-muted/30 rounded-xl">
-            <Loader2 className="w-5 h-5 animate-spin text-primary" />
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             <span className="text-sm font-medium">Applying changes...</span>
           </div>
         )}
@@ -864,8 +864,8 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
       return (
         <div key={item.id} className="mt-8 mb-4 first:mt-0 pl-2">
           <div className="flex items-center gap-3">
-            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-2xl font-bold text-primary">{dayNumber}</span>
+            <div className="w-14 h-14 rounded-full bg-accent text-foreground flex items-center justify-center">
+              <span className="font-display text-3xl leading-none text-foreground">{dayNumber}</span>
             </div>
             <h3 className="font-display text-foreground text-xl">
               {parseInlineContent(trimmedLine.replace(/^#+\s*/, ''))}
@@ -924,7 +924,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         >
           <div className={cn(
             "rounded-full mt-2 shrink-0",
-            indentLevel === 0 ? "w-2 h-2 bg-primary/60" : "w-1.5 h-1.5 bg-muted-foreground/40"
+            indentLevel === 0 ? "w-2 h-2 bg-foreground/50" : "w-1.5 h-1.5 bg-muted-foreground/40"
           )} />
           <div className="flex-1 min-w-0">
             <p className="text-foreground/90 leading-relaxed">{parsedContent}</p>
@@ -979,7 +979,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         key={item.id}
         className="flex items-start gap-3 py-2 px-3 pl-5"
       >
-        <div className="w-2 h-2 rounded-full mt-2 shrink-0 bg-primary/60" />
+        <div className="w-2 h-2 rounded-full mt-2 shrink-0 bg-foreground/50" />
         <p className="text-foreground/90 leading-relaxed">
           {parseInlineContent(trimmedLine.replace(/^#+\s*/, ''))}
         </p>
@@ -1124,7 +1124,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
           )}
         >
           <div className="flex items-start gap-3 py-1.5">
-            <div className="w-2 h-2 rounded-full mt-2.5 shrink-0 bg-primary/60" />
+            <div className="w-2 h-2 rounded-full mt-2.5 shrink-0 bg-foreground/50" />
             <div className="flex-1 min-w-0">
               <p className={cn("text-foreground/90 leading-relaxed", compact && "text-sm")}>
                 {parseInlineContent(parentContent)}
@@ -1276,7 +1276,7 @@ export function ItineraryOutput({ itinerary, isLoading, loadingHeadline, isStrea
         {isEditing && (
           <div className="absolute inset-0 bg-background/60 backdrop-blur-sm flex items-center justify-center rounded-lg z-10">
             <div className="flex items-center gap-3 text-muted-foreground bg-card px-4 py-3 rounded-lg shadow-medium">
-              <Loader2 className="w-5 h-5 animate-spin text-primary" />
+              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
               <span className="font-medium">Applying changes...</span>
             </div>
           </div>

@@ -18,7 +18,7 @@ export function ItinerarySummary({ budgetPerDay, cities, bestTimeToVisit, flight
     <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       {/* Budget Per Day */}
       <div className="p-4 bg-card rounded-xl border border-border">
-        <div className="flex items-center gap-2 text-primary mb-2">
+        <div className="flex items-center gap-2 text-muted-foreground mb-2">
           <DollarSign className="w-4 h-4" />
           <span className="text-xs font-medium">Budget per day</span>
         </div>
@@ -27,7 +27,7 @@ export function ItinerarySummary({ budgetPerDay, cities, bestTimeToVisit, flight
 
       {/* Cities & Days */}
       <div className="p-4 bg-card rounded-xl border border-border">
-        <div className="flex items-center gap-2 text-primary mb-2">
+        <div className="flex items-center gap-2 text-muted-foreground mb-2">
           <Calendar className="w-4 h-4" />
           <span className="text-xs font-medium">Cities and days</span>
         </div>
@@ -43,7 +43,7 @@ export function ItinerarySummary({ budgetPerDay, cities, bestTimeToVisit, flight
 
       {/* Key Activities */}
       <div className="p-4 bg-card rounded-xl border border-border">
-        <div className="flex items-center gap-2 text-primary mb-2">
+        <div className="flex items-center gap-2 text-muted-foreground mb-2">
           <Sparkles className="w-4 h-4" />
           <span className="text-xs font-medium">Key activities</span>
         </div>
@@ -60,7 +60,7 @@ export function ItinerarySummary({ budgetPerDay, cities, bestTimeToVisit, flight
       <div className="p-4 bg-card rounded-xl border border-border">
         {bestTimeToVisit ? (
           <>
-            <div className="flex items-center gap-2 text-primary mb-2">
+            <div className="flex items-center gap-2 text-muted-foreground mb-2">
               <Sun className="w-4 h-4" />
               <span className="text-xs font-medium">Best time to go</span>
             </div>
@@ -68,7 +68,7 @@ export function ItinerarySummary({ budgetPerDay, cities, bestTimeToVisit, flight
           </>
         ) : flightInfo ? (
           <>
-            <div className="flex items-center gap-2 text-primary mb-2">
+            <div className="flex items-center gap-2 text-muted-foreground mb-2">
               <Plane className="w-4 h-4" />
               <span className="text-xs font-medium">Flights</span>
             </div>
@@ -76,7 +76,7 @@ export function ItinerarySummary({ budgetPerDay, cities, bestTimeToVisit, flight
           </>
         ) : (
           <>
-            <div className="flex items-center gap-2 text-primary mb-2">
+            <div className="flex items-center gap-2 text-muted-foreground mb-2">
               <MapPin className="w-4 h-4" />
               <span className="text-xs font-medium">Destinations</span>
             </div>

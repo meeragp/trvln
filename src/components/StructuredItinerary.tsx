@@ -24,7 +24,7 @@ const TAG_COLORS: Record<string, string> = {
   'photo-worthy': 'border border-border text-muted-foreground',
   walking: 'border border-border text-muted-foreground',
   adventure: 'bg-destructive-soft text-destructive',
-  relaxation: 'bg-primary/10 text-primary',
+  relaxation: 'border border-border text-muted-foreground',
   shopping: 'bg-warning-soft text-warning',
   nightlife: 'border border-border text-muted-foreground',
 };
@@ -265,7 +265,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           <div className="space-y-3">
             {data.summary.highlights.map((h, i) => (
               <div key={i} className="flex items-start gap-3">
-                <span className="text-primary font-bold text-base mt-0.5 leading-none">+</span>
+                <span className="text-foreground font-bold text-base mt-0.5 leading-none">+</span>
                 <p className="text-sm text-foreground leading-relaxed">{h}</p>
               </div>
             ))}
@@ -275,7 +275,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {!data.flights.skip && data.flights.options.length > 0 && (
             <div>
               <h4 className="flex items-center gap-2 text-base font-bold text-foreground mb-1">
-                <Plane className="w-4 h-4 text-primary" />
+                <Plane className="w-4 h-4 text-foreground" />
                 Getting there
               </h4>
               {data.flights.context && (
@@ -323,9 +323,9 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                         <>
                           <div className="flex-1">
                             <p className="text-sm font-medium text-foreground">{f.description}</p>
-                            <p className="text-sm font-semibold text-primary mt-0.5">{f.price}</p>
+                            <p className="text-sm font-semibold text-foreground mt-0.5">{f.price}</p>
                           </div>
-                          <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0 mt-0.5" />
+                          <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0 mt-0.5" />
                         </>
                       )}
                     </a>
@@ -338,7 +338,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {/* Budget breakdown */}
           <div>
             <h4 className="flex items-center gap-2 text-base font-bold text-foreground mb-4">
-              <DollarSign className="w-4 h-4 text-primary" />
+              <DollarSign className="w-4 h-4 text-foreground" />
               Budget breakdown
             </h4>
             <div>
@@ -359,7 +359,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
               <div className="border-t border-foreground/15" />
               <div className="flex items-center justify-between pt-3">
                 <span className="text-sm font-bold text-foreground">Total estimate</span>
-                <span className="text-sm font-bold text-primary">{data.budget.total}</span>
+                <span className="text-sm font-bold text-foreground">{data.budget.total}</span>
               </div>
             </div>
           </div>
@@ -368,7 +368,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
           {data.accommodation.length > 0 && (
             <div>
               <h4 className="flex items-center gap-2 text-base font-bold text-foreground mb-4">
-                <Hotel className="w-4 h-4 text-primary" />
+                <Hotel className="w-4 h-4 text-foreground" />
                 Accommodation
               </h4>
               <div className="space-y-4">
@@ -394,7 +394,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="text-sm font-medium text-foreground">{opt.name}</p>
                                 {opt.isPrimary && (
-                                  <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full font-medium">
+                                  <span className="text-[10px] bg-foreground text-background px-1.5 py-0.5 rounded-full font-medium">
                                     Recommended
                                   </span>
                                 )}
@@ -409,11 +409,11 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                               )}
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-sm font-semibold text-primary whitespace-nowrap">
+                              <span className="text-sm font-semibold text-foreground whitespace-nowrap">
                                 {opt.pricePerNight}
                                 <span className="text-xs font-normal text-muted-foreground">/night</span>
                               </span>
-                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
+                              <ExternalLink className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground transition-colors" />
                             </div>
                           </div>
                         </a>
@@ -530,7 +530,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                 className={cn(
                   "flex flex-col items-center px-3.5 py-2 rounded-xl text-xs font-medium transition-all shrink-0 border",
                   activeDayIdx === i
-                    ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                    ? "bg-foreground text-background border-foreground"
                     : "bg-muted/20 text-muted-foreground hover:bg-muted/40 border-transparent"
                 )}
               >
@@ -560,7 +560,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                 </p>
               )}
               {activeDay.transitNote && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs text-primary font-medium">
+                <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground font-medium">
                   <ChevronRight className="w-3.5 h-3.5" />
                   {activeDay.transitNote}
                 </div>
@@ -678,8 +678,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                           className={cn(
                             "p-1.5 rounded-lg transition-colors",
                             isOpen && !fb.vote
-                              ? "bg-primary/10 text-primary"
-                              : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+                              ? "bg-foreground text-background"
+                              : "text-muted-foreground hover:text-foreground hover:bg-accent"
                           )}
                           title="Request a change"
                         >
@@ -691,7 +691,7 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                             href={activity.bookingUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="p-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            className="p-1.5 rounded-lg bg-accent text-foreground hover:bg-muted transition-colors"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>
@@ -868,8 +868,8 @@ export function StructuredItinerary({ data, rawItinerary, tripPreferences, editB
                                 className={cn(
                                   "p-1.5 rounded-lg transition-colors",
                                   isOpen && !fb.vote
-                                    ? "bg-primary/10 text-primary"
-                                    : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+                                    ? "bg-foreground text-background"
+                                    : "text-muted-foreground hover:text-foreground hover:bg-accent"
                                 )}
                                 title="Request a change"
                               >

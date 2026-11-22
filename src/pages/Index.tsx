@@ -272,6 +272,19 @@ const Index = () => {
   const [inferredVibe, setInferredVibe] = useState<InferredVibe | null>(null);
   // When-to-go and budget hints for the places currently on the list
   const [destinationHints, setDestinationHints] = useState<DestinationHints | null>(null);
+  // Places the traveler removed from the list. Media is analyzed again at
+  // generate time, which would otherwise put a removed place straight back.
+  const dismissedPlacesRef = useRef<Set<string>>(new Set());
+  const isDismissed = (place: string) => dismissedPlacesRef.current.has(place.toLowerCase());
+  const handleFormPreferencesChange = useCallback((next: TripPreferences) => {
+    setPreferences(prev => {
+      const kept = new Set(next.cities.map(c => c.toLowerCase()));
+      for (const c of prev.cities) if (!kept.has(c.toLowerCase())) dismissedPlacesRef.current.add(c.toLowerCase());
+      // Adding a place by hand undoes an earlier removal of it
+      for (const c of next.cities) dismissedPlacesRef.current.delete(c.toLowerCase());
+      return next;
+    });
+  }, []);
   // Which step of the input form is showing (0 = Inspiration)
   const [inputStep, setInputStep] = useState(0);
   // The form always opens on its first step, so leaving the input screen and
@@ -703,6 +716,7 @@ const Index = () => {
   const handleNewSearch = useCallback(() => {
     setPreferences(defaultPreferences);
     setInferredVibe(null);
+    dismissedPlacesRef.current = new Set();
     setDestinationHints(null);
     setItineraries([]);
     setActiveVariant(0);
@@ -1141,6 +1155,7 @@ const Index = () => {
           const newLocations = identified
             .filter(d => d.confidence === 'high' || d.confidence === 'medium')
             .map(d => d.location)
+            .filter(loc => !isDismissed(loc))
             .filter(loc => !effectivePreferences.cities.some(c =>
               c.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(c.toLowerCase())
             ));
@@ -1332,8 +1347,8 @@ const Index = () => {
             {/* Reconnect indicator — server kept generating while the tab was away */}
             {isReconnecting && (
               <div className="bg-card rounded-2xl shadow-medium p-6 flex items-center gap-4 animate-slide-up">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <RefreshCw className="w-5 h-5 text-primary animate-spin" />
+                <div className="w-10 h-10 rounded-full bg-accent text-foreground flex items-center justify-center">
+                  <RefreshCw className="w-5 h-5 animate-spin" />
                 </div>
                 <div>
                   <p className="font-medium text-foreground">Finishing your itineraries...</p>
@@ -1356,7 +1371,7 @@ const Index = () => {
                     {isSaving ? (
                       <BookmarkLoader className="w-4 h-4 animate-spin" />
                     ) : isSaved ? (
-                      <BookmarkCheck className="w-4 h-4 text-primary" />
+                      <BookmarkCheck className="w-4 h-4 text-foreground" />
                     ) : (
                       <Bookmark className="w-4 h-4" />
                     )}
@@ -1471,7 +1486,7 @@ const Index = () => {
         <div>
           <TripInputForm
             preferences={preferences}
-            onPreferencesChange={setPreferences}
+            onPreferencesChange={handleFormPreferencesChange}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
             isIdentifyingLocations={isIdentifyingLocations}
@@ -1493,6 +1508,7 @@ const Index = () => {
                 const newLocations = identified
                   .filter(d => d.confidence === 'high' || d.confidence === 'medium')
                   .map(d => d.location)
+                  .filter(loc => !isDismissed(loc))
                   .filter(loc => !preferences.cities.some(c =>
                     c.toLowerCase().includes(loc.toLowerCase()) || loc.toLowerCase().includes(c.toLowerCase())
                   ));

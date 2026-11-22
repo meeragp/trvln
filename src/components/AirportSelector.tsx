@@ -368,7 +368,7 @@ export function AirportSelector({ value, onChange }: AirportSelectorProps) {
                   }}
                   className={cn(
                     "flex items-center gap-2",
-                    airport.isAllAirports && "bg-primary/5 border-l-2 border-primary"
+                    airport.isAllAirports && "bg-accent border-l-2 border-foreground"
                   )}
                 >
                   <Check
@@ -379,14 +379,14 @@ export function AirportSelector({ value, onChange }: AirportSelectorProps) {
                   />
                   <Plane className={cn(
                     "h-4 w-4",
-                    airport.isAllAirports ? "text-primary" : "text-muted-foreground"
+                    airport.isAllAirports ? "text-foreground" : "text-muted-foreground"
                   )} />
                   <div className="flex flex-col flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold">{airport.code}</span>
                       <span className={cn(
                         "text-sm truncate",
-                        airport.isAllAirports ? "text-primary font-medium" : "text-muted-foreground"
+                        airport.isAllAirports ? "text-foreground font-medium" : "text-muted-foreground"
                       )}>
                         {airport.name}
                       </span>

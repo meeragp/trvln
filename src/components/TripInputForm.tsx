@@ -331,7 +331,7 @@ export function TripInputForm({
       )}
       {item.uploading && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
       <button
@@ -481,7 +481,7 @@ export function TripInputForm({
                 className="group flex w-full items-center justify-between gap-4 py-3.5 text-left"
               >
                 <span className="font-display text-2xl leading-tight group-hover:text-primary md:text-[28px]">{wish}</span>
-                <ArrowRight aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-primary" />
+                <ArrowRight aria-hidden="true" className="h-5 w-5 shrink-0 text-muted-foreground group-hover:text-foreground" />
               </button>
             </li>
           ))}
