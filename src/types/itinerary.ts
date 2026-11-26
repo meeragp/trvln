@@ -1,5 +1,19 @@
+// A stop's position on the day map. Looked up server-side at generation (and
+// after edits); absent on itineraries made before the map existed, on stops
+// with no single place (a wander, a drive), and wherever the lookup failed —
+// every consumer must treat it as optional.
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+  placeId?: string;
+}
+
 export interface ItineraryActivity {
   name: string;
+  // The findable place this activity happens at, as the model wrote it for
+  // the lookup. Absent when the activity has no single place.
+  mapQuery?: string;
+  coords?: GeoPoint;
   description: string;
   duration?: string;
   cost?: string;
@@ -13,6 +27,7 @@ export interface DiningOption {
   priceRange?: string;
   url?: string;
   isPrimary?: boolean;
+  coords?: GeoPoint;
 }
 
 export interface DayPeriod {

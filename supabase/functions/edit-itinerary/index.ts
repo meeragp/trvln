@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { z } from "https://deno.land/x/zod@v3.22.4/mod.ts";
 import { CostTracker, persistCost } from "../_shared/costs.ts";
+import { type Coords, geocodeDays, restoreCoords, takeCoords } from "../_shared/geocode.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -170,6 +171,21 @@ ${tripPreferences.additionalNotes || 'None provided'}
     // the legacy markdown renderer and the redesigned layout is lost.
     const isStructured = currentItinerary.trimStart().startsWith('{');
 
+    // Map coordinates never go to the model: they are noise it would copy,
+    // garble or invent. They are held here by place name and grafted back
+    // onto whatever survives the edit; new stops are looked up afterwards.
+    let modelItinerary = currentItinerary;
+    let savedCoords: Map<string, Coords> | null = null;
+    if (isStructured) {
+      try {
+        const parsed = JSON.parse(currentItinerary);
+        if (Array.isArray(parsed?.days)) {
+          savedCoords = takeCoords(parsed.days);
+          modelItinerary = JSON.stringify(parsed);
+        }
+      } catch { /* send as received; the edit itself does not depend on this */ }
+    }
+
     // Mirrors ItineraryData in src/types/itinerary.ts and the generate-itinerary
     // output schema — a field added there must be added here too, or edits will
     // strip it. The "preserve unknown fields" rule below is the safety net for
@@ -184,7 +200,8 @@ The schema, for reference (every field you receive must survive the edit unless 
 - "flights": { skip?, context?, options: [{ description, price, url, airlineCode?, route?, viaCity?, airline?, stops?, duration?, departureTime?, badge? }] }
 - "accommodation": [{ location, nights, options: [{ name, type?, pricePerNight, why?, url, isPrimary }] }]
 - "bookingChecklist": [{ item, leadTime, estimatedCost, url, priority: "high"|"medium"|"low" }]
-- "days": [{ dayNumber, title, location, transitNote?, overview?, locked?, generationFailed?, periods: [{ label: "Morning"|"Afternoon"|"Evening", activities: [{ name, description, duration?, cost?, tags?[], bookingUrl? }], dining?: [{ name, description, priceRange?, url?, isPrimary? }] }] }]
+- "days": [{ dayNumber, title, location, transitNote?, overview?, locked?, generationFailed?, periods: [{ label: "Morning"|"Afternoon"|"Evening", activities: [{ name, mapQuery?, description, duration?, cost?, tags?[], bookingUrl? }], dining?: [{ name, description, priceRange?, url?, isPrimary? }] }] }]
+- "mapQuery" pins an activity on the day's map: the one findable place it happens at, as a Google Maps search would find it, plus its town. Keep it on unchanged activities; give a new activity one when it happens at a single place, and omit it for a wander, open time or a drive.
 - "overview" is the 1–2 sentence explanation of how the day fits together, shown to the traveler above the day's plan. If your edit changes a day's shape, rewrite its overview to match; if a day you touch has none, add one.
 - "alternatives"?: [{ title, description, url? }]
 
@@ -299,7 +316,7 @@ After your </edit_planning> section, output the COMPLETE updated itinerary with 
 
 ## Current Itinerary:
 
-${currentItinerary}
+${modelItinerary}
 
 ---
 
@@ -419,6 +436,31 @@ Apply the edit request above to the itinerary. First plan your changes in <edit_
     // model wrapped the JSON in despite instructions.
     updatedItinerary = updatedItinerary.replace(/<edit_planning>[\s\S]*?<\/edit_planning>/g, '').trim();
     updatedItinerary = updatedItinerary.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+
+    // Re-attach the pins held back above and look up the stops the edit added.
+    // Best-effort: output that will not parse here goes back untouched for
+    // the client's own repair path, just without pins on the changed stops.
+    if (savedCoords) {
+      try {
+        const edited = JSON.parse(updatedItinerary);
+        if (Array.isArray(edited?.days)) {
+          restoreCoords(edited.days, savedCoords);
+          // Its own tracker: the edit's model cost was persisted above, before
+          // the early returns that must still record it.
+          const pinCosts = new CostTracker();
+          await geocodeDays(edited.days, {
+            apiKey: Deno.env.get('GOOGLE_PLACES_API_KEY')?.trim(),
+            costs: pinCosts,
+            phase: 'places_geocode_edit',
+            deadline: Date.now() + 8_000,
+          });
+          if (pinCosts.entries.length) void persistCost(pinCosts, { function_name: 'edit-itinerary' });
+          updatedItinerary = JSON.stringify(edited);
+        }
+      } catch (e) {
+        console.warn('Edited itinerary did not parse server-side; returning without re-attached pins:', e instanceof Error ? e.message : e);
+      }
+    }
 
     console.log('Itinerary edit complete, length:', updatedItinerary.length);
 

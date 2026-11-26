@@ -360,3 +360,47 @@
     animation: none !important;
   }
 }
+/* ── Day map ──────────────────────────────────────────────────────────────
+   Pins and route for DayMap. Colour is meaning: the period a stop belongs
+   to, matching the numbered badges on the day's cards (.trv-stop-badge).
+   Marigold is a fill only, so its number is ink. */
+.trv-map .leaflet-tile-pane {
+  /* Pull the stock OSM palette toward warm paper so the pins carry the colour. */
+  filter: saturate(0.55) sepia(0.12) brightness(1.02);
+}
+.trv-map .leaflet-control-attribution {
+  font-size: 10px;
+  background: hsl(var(--card) / 0.85);
+}
+.trv-route {
+  stroke: hsl(var(--primary));
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-opacity: 0.85;
+}
+.trv-pin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9999px;
+  border: 2px solid hsl(var(--card));
+  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.35);
+  font: 600 12px/1 "Geist", system-ui, sans-serif;
+  transition: transform 120ms ease;
+  cursor: pointer;
+}
+.trv-pin--active {
+  transform: scale(1.25);
+  border-color: hsl(var(--foreground));
+}
+.trv-pin--morning,
+.trv-stop-badge--morning { background: hsl(var(--marigold)); color: hsl(var(--foreground)); }
+.trv-pin--afternoon,
+.trv-stop-badge--afternoon { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); }
+.trv-pin--evening,
+.trv-stop-badge--evening { background: hsl(var(--foreground)); color: hsl(var(--background)); }
+@media (prefers-reduced-motion: reduce) {
+  .trv-pin { transition: none; }
+}

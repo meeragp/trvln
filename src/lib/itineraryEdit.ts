@@ -1,4 +1,5 @@
 import type { ItineraryData } from "@/types/itinerary";
+import { regraftCoords } from "@/lib/dayRoute";
 
 // Helpers for the whole-itinerary edit flow: what gets sent to the
 // edit-itinerary function, and how its response is validated before it is
@@ -101,5 +102,5 @@ export const mergeEditedItinerary = (
 ): ItineraryData | null => {
   const parsed = parseStructuredItinerary(displayContent);
   if (!isRenderableItinerary(parsed)) return null;
-  return { ...parsed, sources: previous.sources, access: previous.access };
+  return { ...regraftCoords(parsed, previous), sources: previous.sources, access: previous.access };
 };

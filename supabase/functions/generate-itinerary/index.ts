@@ -18,6 +18,7 @@ import {
   waitForTripReading,
   waitForTripResearch,
 } from "../_shared/research.ts";
+import { geocodeDays, knownPlaceCoords } from "../_shared/geocode.ts";
 import { handleCreateCheckoutSession, handleConfirmCheckout, handleStripeWebhook } from "../_shared/stripeHttp.ts";
 // deploy-v3
 
@@ -349,6 +350,7 @@ Use this exact schema. Every field shown is required unless marked optional. All
           "activities": [
             {
               "name": "Arrive at PDL Airport",
+              "mapQuery": "João Paulo II Airport, Ponta Delgada",
               "description": "Clear customs and pick up your rental car; city center is 20 minutes away.",
               "duration": "2 hours",
               "cost": "Free",
@@ -461,6 +463,8 @@ STRICT RULES:
 - Hard caps on every trip-level list — these bound how long the plan takes to write, and the whole generation runs against a fixed wall clock: at most 3 flights.options, at most 2 accommodation options per location, at most 6 bookingChecklist items (the ones with real lead times or consequences), at most 2 alternatives. Fewer is always acceptable; choosing the best two beats listing four.
 - Every day must have exactly 3 periods: Morning, Afternoon, Evening
 - Give each period the number of activities the day actually warrants: 1 to 3. Two is common, but a period built around a single real thing — a long walk, a day trip, a lunch that runs into the afternoon — takes exactly one, and padding it to two is the clearest tell that an itinerary was generated rather than planned. A day that is genuinely one big thing may run one activity per period throughout.
+- Give an activity a "mapQuery" when it happens at one findable place: the name a Google Maps search would land on, plus its town ("Gruta do Carvão, Ponta Delgada"). It pins the stop on the day's map. OMIT it when the activity has no single place — a wander, open time, a drive, a long trail — rather than naming a spot the traveler only passes through. Never put a restaurant in an activity's mapQuery; meals are pinned from their dining entry.
+- The day map reads each period as one route: Morning's breakfast comes before its activities, Afternoon's lunch before its activities, and Evening's dinner after its activities. Order activities so that sequence moves forward through the area.
 - Deliberate open time is a legitimate entry and often the most human thing on the page: an unstructured hour in a named neighborhood, a slow morning after a late arrival, an afternoon left free because the day before was long. Name it as an activity and say what it is for. This is not a way to fill space you could not research — that is a different thing and it reads differently.
 - Include 1 or 2 dining options for every period: Morning (breakfast), Afternoon (lunch), Evening (dinner). The first must have "isPrimary": true (top pick); include a second with "isPrimary": false ONLY when a real, separate alternative exists within reach of where the traveler actually is at that hour. One real option beats two where the second is filler.
 - NEVER INVENT A RESTAURANT TO FILL A SLOT. Every name must come from the grounded research, or be the place the traveler is already staying that day, or — where no research was available — be a long-established place you are confident still exists. If nothing for a location meets that bar, give one option, the lodging's own kitchen, rather than a second name you cannot stand behind. A slot with one sourced option is correct; a slot with an invented second option is a failure.
@@ -1135,6 +1139,20 @@ async function handleResume(args: {
 
       const allDays = [...byNumber.values()]
         .sort((a, b) => ((a.dayNumber as number) ?? 0) - ((b.dayNumber as number) ?? 0));
+
+      // Pin the newly written days. The dining backbone is not banked for
+      // resume, so meals are looked up like everything else; days written
+      // before the unlock keep whatever pins they already have.
+      if (missing.length > 0) {
+        const fresh = allDays.filter(d =>
+          missing.includes(d.dayNumber as number) && !(d as { generationFailed?: boolean }).generationFailed);
+        await geocodeDays(fresh, {
+          apiKey: Deno.env.get("GOOGLE_PLACES_API_KEY")?.trim(),
+          costs,
+          phase: "places_geocode_resume",
+          deadline: t0 + WALL_CLOCK_BUDGET_MS - 15_000,
+        });
+      }
 
       const tail = { ...fullTail } as Record<string, unknown>;
       if (failedDays.length > 0) {
@@ -2386,6 +2404,31 @@ or
         // ── Pass 2: the days, in parallel ─────────────────────────────────
         const limit = makeLimiter(8);
         const slicesStart = Date.now();
+        // Map pins. Meals assigned from the dining backbone already carry
+        // their location; the rest are looked up as each slice lands, so the
+        // lookups overlap the slices still being written instead of queuing
+        // behind the last one.
+        const knownCoords = knownPlaceCoords(placesDining);
+        const geocodeCache = new Map();
+        const pinSlice = (days: unknown[]) => geocodeDays(
+          (days as Record<string, unknown>[]).map(d => {
+            const n = (d as { dayNumber?: unknown })?.dayNumber;
+            const entry = typeof n === "number" ? roster[n - 1] : undefined;
+            return d && typeof d === "object" && !(d as { location?: unknown }).location && entry?.location
+              ? Object.assign(d, { location: entry.location })
+              : d as Record<string, unknown>;
+          }),
+          {
+            apiKey: GOOGLE_PLACES_API_KEY,
+            known: knownCoords,
+            costs,
+            phase: "places_geocode",
+            cache: geocodeCache,
+            // Pins are a nicety; the day itself is not. Stop starting lookups
+            // well before the isolate's kill so the stream can still finish.
+            deadline: t0 + WALL_CLOCK_BUDGET_MS - 15_000,
+          },
+        );
         const slicePromises = slices.map(dayNumbers => limit(async () => {
           const label = `day${dayNumbers.join("+")}`;
           const sliceInstruction = buildSliceInstruction({
@@ -2411,6 +2454,10 @@ or
           costs.addAnthropic(`day_slice_${label}`, MODEL, result.usage);
           const parsed = result.data as { days?: unknown[] };
           return { days: Array.isArray(parsed.days) ? parsed.days : [], tokens: result.outputTokens };
+        }).then(async value => {
+          // Outside the limiter: a slot belongs to a model call, not a lookup.
+          await pinSlice(value.days);
+          return value;
         }).then(
           value => ({ ok: true as const, value }),
           // Settled at creation, not at await. Every slice starts at once but

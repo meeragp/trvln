@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useRef, type CSSProperties } from "react";
 import { ChevronLeft, Plus, Bookmark, BookmarkCheck, Loader2 as BookmarkLoader, RefreshCw } from "lucide-react";
 import { TripInputForm, TripPreferences } from "@/components/TripInputForm";
 import { ItineraryOutput } from "@/components/ItineraryOutput";
@@ -255,6 +255,20 @@ const clearPendingAuthAction = () => {
 
 const Index = () => {
   const [view, setView] = useState<View>(() => loadPersistedSession()?.view ?? 'input');
+  // The sticky trip header's height, tracked so content inside the itinerary
+  // card can stick just below it. A callback ref because the header mounts
+  // and unmounts with the results view.
+  const [tripHeaderHeight, setTripHeaderHeight] = useState(0);
+  const tripHeaderObserver = useRef<ResizeObserver | null>(null);
+  const tripHeaderRef = useCallback((el: HTMLDivElement | null) => {
+    tripHeaderObserver.current?.disconnect();
+    tripHeaderObserver.current = null;
+    if (!el) return;
+    setTripHeaderHeight(el.offsetHeight);
+    if (typeof ResizeObserver === 'undefined') return;
+    tripHeaderObserver.current = new ResizeObserver(() => setTripHeaderHeight(el.offsetHeight));
+    tripHeaderObserver.current.observe(el);
+  }, []);
   const [preferences, setPreferences] = useState<TripPreferences>(
     () => loadPersistedSession()?.preferences ?? defaultPreferences
   );
@@ -1389,8 +1403,14 @@ const Index = () => {
 
             {/* Itinerary card */}
             {(itineraries.length > 0 || isGenerating) && (
-              <div className="bg-card rounded-2xl shadow-medium">
-                <div className="sticky top-[57px] z-20 bg-card/95 backdrop-blur-sm px-6 py-5 md:px-8 rounded-t-2xl">
+              <div
+                className="bg-card rounded-2xl shadow-medium"
+                // Where the two sticky bars above end, for anything inside the
+                // card that sticks too (the day view's jump bar). 57px is the
+                // app bar; the trip header's height varies with its tagline.
+                style={{ '--itinerary-sticky-top': `${57 + tripHeaderHeight}px` } as CSSProperties}
+              >
+                <div ref={tripHeaderRef} className="sticky top-[57px] z-20 bg-card/95 backdrop-blur-sm px-6 py-5 md:px-8 rounded-t-2xl">
                   <h2 className="font-display text-xl text-foreground leading-tight">
                     {currentItinerary
                       ? `${currentItinerary.emoji} ${currentItinerary.name}`
